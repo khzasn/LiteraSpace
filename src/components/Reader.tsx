@@ -103,7 +103,26 @@ export function Reader({ book, onBack }: { book: Book; onBack: () => void }) {
              if (bRect.top < rect.top) {
                fraction = (rect.top - bRect.top) / bRect.height;
              }
-             localStorage.setItem(`pos_${book.id}`, JSON.stringify({ blockId, fraction }));
+             
+             // Hitung persentase global
+             let currentIdx = 0;
+             let totalBlocks = 0;
+             let found = false;
+             for (const c of book.chapters) {
+               if (!found) {
+                 const idx = c.blocks.findIndex(bl => bl.id === blockId);
+                 if (idx !== -1) {
+                   currentIdx += idx;
+                   found = true;
+                 } else {
+                   currentIdx += c.blocks.length;
+                 }
+               }
+               totalBlocks += c.blocks.length;
+             }
+             const percent = totalBlocks > 0 ? Math.round((currentIdx / totalBlocks) * 100) : 0;
+             
+             localStorage.setItem(`pos_${book.id}`, JSON.stringify({ blockId, fraction, percent }));
              break;
           }
         }
