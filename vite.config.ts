@@ -46,8 +46,10 @@ export default defineConfig({
     target: 'es2022',
     rollupOptions: {
       output: {
-        manualChunks: {
-          pdfjs: ['pdfjs-dist'],
+        manualChunks(id) {
+          if (id.includes('pdfjs-dist')) {
+            return 'pdfjs';
+          }
         },
       },
     },
