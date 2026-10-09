@@ -87,7 +87,9 @@ export async function parsePdf(
   const pdf = await pdfjs.getDocument({
     data: new Uint8Array(buffer),
     useSystemFonts: true,
-  }).promise;
+    disableFontFace: true,
+    verbosity: 0,
+  } as any).promise;
   const total = pdf.numPages;
 
   // ---------- 1. Ekstraksi per halaman ----------
