@@ -94,8 +94,11 @@ export function App() {
   }
 
   async function exportBackup() {
+    const db = await getDB();
+    const highlights = await db.getAll('highlights');
     const backup = {
       books,
+      highlights,
       settings: localStorage.getItem('pembaca-nyaman-settings'),
       positions: Object.keys(localStorage).filter(k => k.startsWith('pos_')).map(k => ({ k, v: localStorage.getItem(k) }))
     };
@@ -119,10 +122,18 @@ export function App() {
           backup.positions.forEach((p: any) => localStorage.setItem(p.k, p.v));
         }
         if (backup.books && backup.books.length > 0) {
-          setProgress({ page: 1, total: 1, msg: 'Mengimpor buku...' });
+          setProgress({ page: 1, total: 1, msg: 'Mengimpor buku dan highlight...' });
           for (const b of backup.books) {
             await saveBook(b);
           }
+        }
+        if (backup.highlights && backup.highlights.length > 0) {
+          const db = await getDB();
+          const tx = db.transaction('highlights', 'readwrite');
+          for (const h of backup.highlights) {
+            await tx.store.put(h);
+          }
+          await tx.done;
         }
         alert('Backup berhasil diimpor! (Catatan: file gambar/PDF asli tidak ikut ter-backup demi menghemat ruang)');
         setProgress(null);

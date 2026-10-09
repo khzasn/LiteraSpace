@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import type { Book, Block } from '../types/book';
-import { getBlob } from '../lib/db';
+import type { Book, Block, Highlight, HighlightSegment } from '../types/book';
+import { getBlob, getHighlightsByBook, saveHighlight, deleteHighlight } from '../lib/db';
 import { settings } from '../lib/settings';
+import { getSelectionSegments, renderHighlights } from '../lib/highlighter';
 
 export function Reader({ book, onBack }: { book: Book; onBack: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -9,6 +10,23 @@ export function Reader({ book, onBack }: { book: Book; onBack: () => void }) {
   const [showSettings, setShowSettings] = useState(false);
 
   const [originalPage, setOriginalPage] = useState<number | null>(null);
+
+  const [highlights, setHighlights] = useState<Highlight[]>([]);
+  const [activeSelection, setActiveSelection] = useState<{ segments: HighlightSegment[], text: string } | null>(null);
+  const [activeHlId, setActiveHlId] = useState<string | null>(null);
+  const [showHighlightsDrawer, setShowHighlightsDrawer] = useState(false);
+
+  // Muat highlights saat pertama buka buku
+  useEffect(() => {
+    getHighlightsByBook(book.id).then(setHighlights);
+  }, [book.id]);
+
+  // Terapkan highlight ke DOM tiap kali data highlights berubah
+  useEffect(() => {
+    if (containerRef.current) {
+      renderHighlights(containerRef.current, highlights);
+    }
+  }, [highlights, settings.value.fontSize, settings.value.fontFamily, settings.value.theme]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -66,6 +84,36 @@ export function Reader({ book, onBack }: { book: Book; onBack: () => void }) {
       
       container.appendChild(chapEl);
     });
+
+    // Pasang highlight awal saat DOM selesai dibuat
+    renderHighlights(container, highlights);
+
+    // Event handler untuk seleksi teks
+    const handleSelection = () => {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed) {
+        if (activeSelection) setActiveSelection(null);
+        return;
+      }
+      const segments = getSelectionSegments(sel);
+      if (segments) {
+        setActiveSelection({ segments, text: sel.toString() });
+      } else {
+        setActiveSelection(null);
+      }
+    };
+    document.addEventListener('selectionchange', handleSelection);
+
+    // Event handler klik pada mark highlight yang sudah ada
+    const onMarkClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const hlId = target.dataset.hl;
+      if (hlId) {
+        e.stopPropagation(); // Jangan toggle toolbar utama
+        setActiveHlId(hlId);
+      }
+    };
+    container.addEventListener('click', onMarkClick);
 
     // Pulihkan posisi baca sebelumnya
     const restorePos = () => {
@@ -132,9 +180,48 @@ export function Reader({ book, onBack }: { book: Book; onBack: () => void }) {
 
     return () => {
       container.removeEventListener('click', onBlockClick);
+      container.removeEventListener('click', onMarkClick);
       container.removeEventListener('scroll', onScroll);
+      document.removeEventListener('selectionchange', handleSelection);
     };
   }, [book]);
+
+  async function handleCreateHighlight(color: string) {
+    if (!activeSelection) return;
+    const text = activeSelection.text;
+    // Potong prefix/suffix untuk anchoring jika versi berubah (sepanjang 32 char)
+    const hl: Highlight = {
+      id: crypto.randomUUID(),
+      bookId: book.id,
+      groupSegments: activeSelection.segments,
+      text,
+      prefix: '', // belum diimplementasikan full prefix pencarian fallback
+      suffix: '',
+      color,
+      parserVersion: book.parserVersion,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    await saveHighlight(hl);
+    setHighlights(prev => [...prev, hl]);
+    setActiveSelection(null);
+    window.getSelection()?.removeAllRanges();
+  }
+
+  async function handleUpdateHighlight(id: string, color: string) {
+    const hl = highlights.find(h => h.id === id);
+    if (!hl) return;
+    const updated = { ...hl, color, updatedAt: Date.now() };
+    await saveHighlight(updated);
+    setHighlights(prev => prev.map(h => h.id === id ? updated : h));
+    setActiveHlId(null);
+  }
+
+  async function handleDeleteHighlight(id: string) {
+    await deleteHighlight(id);
+    setHighlights(prev => prev.filter(h => h.id !== id));
+    setActiveHlId(null);
+  }
 
   function handleCenterClick(e: MouseEvent) {
     // Jika user menyeleksi teks, jangan toggle toolbar
@@ -147,6 +234,21 @@ export function Reader({ book, onBack }: { book: Book; onBack: () => void }) {
     
     setShowToolbar(prev => !prev);
     setShowSettings(false); // Tutup drawer bila toolbar di-toggle
+  }
+
+  function exportMd() {
+    let md = `# Kutipan dari ${book.title}\n\n`;
+    highlights.sort((a,b) => a.createdAt - b.createdAt).forEach(hl => {
+      md += `> ${hl.text}\n`;
+      if (hl.note) md += `\n**Catatan:** ${hl.note}\n`;
+      md += `\n---\n\n`;
+    });
+    const blob = new Blob([md], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${book.title} - Kutipan.md`;
+    a.click();
   }
 
   return (
@@ -170,12 +272,13 @@ export function Reader({ book, onBack }: { book: Book; onBack: () => void }) {
       }}>
         <button onClick={(e) => { e.stopPropagation(); onBack(); }} style={btnStyle}>← Kembali</button>
         <div>
+          <button onClick={(e) => { e.stopPropagation(); setShowHighlightsDrawer(true); setShowSettings(false); }} style={{ ...btnStyle, marginRight: 10 }}>Penanda</button>
           <button style={{ ...btnStyle, marginRight: 10 }}>Daftar Isi</button>
-          <button onClick={(e) => { e.stopPropagation(); setShowSettings(!showSettings); }} style={btnStyle}>Aa</button>
+          <button onClick={(e) => { e.stopPropagation(); setShowSettings(!showSettings); setShowHighlightsDrawer(false); }} style={btnStyle}>Aa</button>
         </div>
       </div>
 
-      {/* Settings Drawer (Sederhana untuk sekarang) */}
+      {/* Settings Drawer */}
       {showSettings && (
         <div style={{
           position: 'fixed', top: '70px', right: '15px',
@@ -184,7 +287,9 @@ export function Reader({ book, onBack }: { book: Book; onBack: () => void }) {
           padding: '15px',
           borderRadius: '8px',
           boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-          zIndex: 101
+          zIndex: 101,
+          maxHeight: '80vh',
+          overflowY: 'auto'
         }} onClick={e => e.stopPropagation()}>
           <h4 style={{ marginBottom: 10 }}>Tema</h4>
           <div style={{ display: 'flex', gap: 10, marginBottom: 15, flexWrap: 'wrap' }}>
@@ -254,9 +359,135 @@ export function Reader({ book, onBack }: { book: Book; onBack: () => void }) {
           </div>
         </div>
       )}
+
+      {/* Highlights Drawer */}
+      {showHighlightsDrawer && (
+        <div style={{
+          position: 'fixed', top: 0, bottom: 0, right: 0, width: '100%', maxWidth: '350px',
+          background: 'var(--bg-color)', borderLeft: '1px solid var(--border-color)',
+          boxShadow: '-4px 0 15px rgba(0,0,0,0.1)', zIndex: 102, display: 'flex', flexDirection: 'column'
+        }} onClick={e => e.stopPropagation()}>
+          <div style={{ padding: '15px calc(15px + var(--safe-right)) 15px 15px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3 style={{ margin: 0 }}>Penanda ({highlights.length})</h3>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={exportMd} style={btnStyle}>↓ MD</button>
+              <button onClick={() => setShowHighlightsDrawer(false)} style={{ ...btnStyle, border: 'none', padding: 5 }}>✕</button>
+            </div>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '15px calc(15px + var(--safe-right)) 15px 15px' }}>
+            {highlights.length === 0 ? (
+              <p style={{ opacity: 0.5, textAlign: 'center', marginTop: 30 }}>Belum ada penanda di buku ini.</p>
+            ) : (
+              highlights.sort((a,b) => b.createdAt - a.createdAt).map(hl => (
+                <div key={hl.id} 
+                  style={{ padding: 12, border: '1px solid var(--border-color)', borderRadius: 8, marginBottom: 12, cursor: 'pointer' }}
+                  onClick={() => {
+                     setShowHighlightsDrawer(false);
+                     const el = containerRef.current?.querySelector(`[data-block-id="${hl.groupSegments[0].blockId}"]`);
+                     if (el) {
+                       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                       // blink effect could be added here
+                     }
+                  }}
+                >
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                    <div style={{ width: 12, height: 12, borderRadius: '50%', background: hl.color === 'yellow' ? '#fde047' : hl.color === 'green' ? '#86efac' : hl.color === 'blue' ? '#93c5fd' : hl.color === 'pink' ? '#f9a8d4' : '#d8b4fe' }} />
+                    <span style={{ fontSize: '0.8em', opacity: 0.6 }}>{new Date(hl.createdAt).toLocaleDateString()}</span>
+                  </div>
+                  <p style={{ margin: 0, fontSize: '0.9em', fontStyle: 'italic', opacity: 0.9 }}>"{hl.text}"</p>
+                  {hl.note && <p style={{ margin: '8px 0 0 0', fontSize: '0.85em', background: 'var(--toolbar-bg)', padding: 8, borderRadius: 4 }}>📝 {hl.note}</p>}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Modal Halaman Asli */}
       {originalPage && (
         <PdfModal bookId={book.id} pageNum={originalPage} onClose={() => setOriginalPage(null)} />
+      )}
+
+      {/* Bar Aksi Seleksi Baru */}
+      {activeSelection && (
+        <HighlightMenu 
+          onColor={(color) => handleCreateHighlight(color)}
+          onSaveNote={async (note) => {
+             // Create default yellow highlight with note
+             if (!activeSelection) return;
+             const hl: Highlight = {
+               id: crypto.randomUUID(), bookId: book.id, groupSegments: activeSelection.segments,
+               text: activeSelection.text, prefix: '', suffix: '', color: 'yellow', note,
+               parserVersion: book.parserVersion, createdAt: Date.now(), updatedAt: Date.now()
+             };
+             await saveHighlight(hl);
+             setHighlights(prev => [...prev, hl]);
+             setActiveSelection(null);
+             window.getSelection()?.removeAllRanges();
+          }}
+          onCancel={() => { window.getSelection()?.removeAllRanges(); setActiveSelection(null); }} 
+        />
+      )}
+
+      {/* Bar Aksi Edit Highlight */}
+      {activeHlId && (
+        <HighlightMenu 
+          isEdit={true}
+          hlColor={highlights.find(h => h.id === activeHlId)?.color}
+          initialNote={highlights.find(h => h.id === activeHlId)?.note}
+          onColor={(color) => handleUpdateHighlight(activeHlId, color)}
+          onSaveNote={async (note) => {
+             const hl = highlights.find(h => h.id === activeHlId);
+             if (!hl) return;
+             const updated = { ...hl, note, updatedAt: Date.now() };
+             await saveHighlight(updated);
+             setHighlights(prev => prev.map(h => h.id === activeHlId ? updated : h));
+          }}
+          onDelete={() => handleDeleteHighlight(activeHlId)}
+          onCancel={() => setActiveHlId(null)} 
+        />
+      )}
+    </div>
+  );
+}
+
+function HighlightMenu({ onColor, onCancel, onDelete, isEdit, hlColor, initialNote, onSaveNote }: { onColor: (c: string) => void, onCancel: () => void, onDelete?: () => void, isEdit?: boolean, hlColor?: string, initialNote?: string, onSaveNote?: (note: string) => void }) {
+  const colors = ['yellow', 'green', 'blue', 'pink', 'purple'];
+  const [note, setNote] = useState(initialNote || '');
+  const [showNote, setShowNote] = useState(!!initialNote);
+
+  return (
+    <div style={{
+      position: 'fixed', bottom: 'env(safe-area-inset-bottom, 15px)', left: '50%', transform: 'translateX(-50%)',
+      background: 'var(--toolbar-bg)', border: '1px solid var(--border-color)', borderRadius: 12,
+      padding: '8px 15px', display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center', boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
+      zIndex: 200, width: '90%', maxWidth: '350px'
+    }} onClick={e => e.stopPropagation()}>
+      
+      {showNote ? (
+        <div style={{ width: '100%', display: 'flex', gap: 8 }}>
+          <input 
+            type="text" 
+            placeholder="Tulis catatan..." 
+            value={note} 
+            onChange={e => setNote((e.target as HTMLInputElement).value)} 
+            style={{ flex: 1, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border-color)', background: 'var(--bg-color)', color: 'var(--text-color)' }}
+          />
+          <button onClick={() => { onSaveNote?.(note); setShowNote(false); }} style={{ ...btnStyle, background: 'var(--text-color)', color: 'var(--bg-color)', border: 'none' }}>Simpan</button>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', width: '100%', justifyContent: 'center' }}>
+          {colors.map(c => (
+            <button key={c} onClick={() => onColor(c)} style={{
+              width: 28, height: 28, borderRadius: '50%', border: hlColor === c ? '2px solid var(--text-color)' : '1px solid rgba(0,0,0,0.1)', cursor: 'pointer',
+              background: c === 'yellow' ? '#fde047' : c === 'green' ? '#86efac' : c === 'blue' ? '#93c5fd' : c === 'pink' ? '#f9a8d4' : '#d8b4fe'
+            }} />
+          ))}
+          <div style={{ width: 1, height: 20, background: 'var(--border-color)', margin: '0 5px' }} />
+          <button onClick={() => setShowNote(true)} style={{ ...btnStyle, border: 'none', background: 'transparent' }}>📝</button>
+          {isEdit && <button onClick={onDelete} style={{ ...btnStyle, color: 'red', border: 'none', background: 'transparent' }}>Hapus</button>}
+          <button onClick={onCancel} style={{ ...btnStyle, border: 'none', background: 'transparent' }}>✕</button>
+        </div>
       )}
     </div>
   );

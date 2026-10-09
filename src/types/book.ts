@@ -47,3 +47,24 @@ export interface Book {
   pageCount: number;
   chapters: Chapter[];
 }
+
+export interface HighlightSegment {
+  blockId: string;
+  start: number;
+  end: number;
+}
+
+export interface Highlight {
+  id: string;
+  bookId: string;
+  groupSegments: HighlightSegment[];
+  text: string;
+  prefix: string;
+  suffix: string;
+  color: string;
+  note?: string;
+  label?: 'kutipan' | 'kata' | 'ide';
+  parserVersion: string;
+  createdAt: number;
+  updatedAt: number;
+}
