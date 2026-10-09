@@ -12,14 +12,23 @@
     "test:golden": "vitest run tests/parser.test.ts"
   },
   "devDependencies": {
+    "@preact/preset-vite": "^2.10.6",
+    "@vitest/coverage-v8": "^3.2.4",
     "typescript": "~6.0.2",
     "vite": "^8.3.0",
-    "vitest": "^3.2.4",
-    "@vitest/coverage-v8": "^3.2.4"
+    "vitest": "^3.2.4"
   },
   "dependencies": {
+    "@fontsource/inter": "^5.3.0",
+    "@fontsource/lexend": "^5.3.0",
+    "@fontsource/literata": "^5.3.0",
+    "@fontsource/lora": "^5.3.0",
+    "@fontsource/merriweather": "^5.3.0",
+    "@fontsource/opendyslexic": "^5.3.0",
+    "@preact/signals": "^2.11.3",
     "idb": "^8.0.4",
     "pdfjs-dist": "^6.4.299",
+    "preact": "^11.0.1",
     "vite-plugin-pwa": "^2.0.0"
   }
 }

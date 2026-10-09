@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import preact from '@preact/preset-vite';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -8,6 +9,7 @@ export default defineConfig({
   base: '/pembaca-nyaman/',
 
   plugins: [
+    preact(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg', 'icon-192.png', 'icon-512.png'],
