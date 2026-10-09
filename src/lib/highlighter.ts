@@ -155,7 +155,7 @@ function wrapTextRange(block: HTMLElement, start: number, end: number, hlId: str
     
     const mark = document.createElement('mark');
     mark.dataset.hl = hlId;
-    mark.className = `hl-color-${color}`;
+    mark.className = `hl-${color}`;
     
     const parent = targetNode.parentNode;
     parent?.insertBefore(mark, targetNode);

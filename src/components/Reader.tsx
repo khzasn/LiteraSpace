@@ -3,204 +3,140 @@ import type { Book, Block, Highlight, HighlightSegment } from '../types/book';
 import { getBlob, getHighlightsByBook, saveHighlight, deleteHighlight } from '../lib/db';
 import { settings } from '../lib/settings';
 import { getSelectionSegments, renderHighlights } from '../lib/highlighter';
+import * as pdfjs from 'pdfjs-dist';
+// @ts-ignore
+import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
+
+// ─── Warna highlight ───
+const HL_COLORS = ['yellow', 'green', 'blue', 'pink', 'purple'] as const;
+type HlColor = typeof HL_COLORS[number];
+const COLOR_HEX: Record<HlColor, string> = {
+  yellow: '#fde047', green: '#86efac', blue: '#93c5fd', pink: '#f9a8d4', purple: '#d8b4fe'
+};
+
+// ─── Reader utama ───
 
 export function Reader({ book, onBack }: { book: Book; onBack: () => void }) {
-  const containerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const [showToolbar, setShowToolbar] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
-
+  const [showHlDrawer, setShowHlDrawer] = useState(false);
   const [originalPage, setOriginalPage] = useState<number | null>(null);
 
   const [highlights, setHighlights] = useState<Highlight[]>([]);
-  const [activeSelection, setActiveSelection] = useState<{ segments: HighlightSegment[], text: string } | null>(null);
+  const [activeSelection, setActiveSelection] = useState<{ segments: HighlightSegment[]; text: string } | null>(null);
   const [activeHlId, setActiveHlId] = useState<string | null>(null);
-  const [showHighlightsDrawer, setShowHighlightsDrawer] = useState(false);
 
-  // Muat highlights saat pertama buka buku
+  // Muat highlights dari DB
   useEffect(() => {
     getHighlightsByBook(book.id).then(setHighlights);
   }, [book.id]);
 
-  // Terapkan highlight ke DOM tiap kali data highlights berubah
+  // Re-render highlight jika data atau pengaturan berubah
   useEffect(() => {
-    if (containerRef.current) {
-      renderHighlights(containerRef.current, highlights);
-    }
-  }, [highlights, settings.value.fontSize, settings.value.fontFamily, settings.value.theme]);
+    if (contentRef.current) renderHighlights(contentRef.current, highlights);
+  }, [highlights, settings.value.fontSize, settings.value.fontFamily]);
 
+  // Build DOM buku + pasang event listener
   useEffect(() => {
-    if (!containerRef.current) return;
-    const container = containerRef.current;
-    
-    // Event delegation untuk tombol "Lihat Halaman Asli"
-    const onBlockClick = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.classList.contains('block-action-btn')) {
-        e.stopPropagation();
-        const p = parseInt(target.dataset.page || '1', 10);
-        setOriginalPage(p);
-      }
-    };
-    container.addEventListener('click', onBlockClick);
+    const container = contentRef.current;
+    if (!container) return;
 
-    // Cegah render ulang jika buku sama sudah dirender
-    if (container.dataset.bookId === book.id) {
-      return () => container.removeEventListener('click', onBlockClick);
-    }
-    
+    // Render buku ke DOM (vanilla)
     container.innerHTML = '';
     container.dataset.bookId = book.id;
+    buildBookDOM(container, book);
 
-    // Render per bab
-    book.chapters.forEach(chapter => {
-      const chapEl = document.createElement('div');
-      chapEl.className = 'book-chapter';
-      chapEl.id = `chap-${chapter.id}`;
-      
-      // Render judul bab
-      if (chapter.label) {
-        const lbl = document.createElement('h2');
-        lbl.className = 'book-h level-bab';
-        lbl.textContent = chapter.label;
-        chapEl.appendChild(lbl);
-      }
-      if (chapter.title) {
-        const title = document.createElement('h2');
-        title.className = 'book-h level-judul';
-        title.textContent = chapter.title;
-        chapEl.appendChild(title);
-      }
-      if (chapter.subtitle) {
-        const sub = document.createElement('h3');
-        sub.className = 'book-h level-sub';
-        sub.textContent = chapter.subtitle;
-        chapEl.appendChild(sub);
-      }
-      
-      chapter.blocks.forEach(block => {
-        const blockEl = createBlockElement(book.id, block);
-        chapEl.appendChild(blockEl);
-      });
-      
-      container.appendChild(chapEl);
-    });
-
-    // Pasang highlight awal saat DOM selesai dibuat
+    // Pasang highlight awal
     renderHighlights(container, highlights);
 
-    // Event handler untuk seleksi teks
-    const handleSelection = () => {
-      const sel = window.getSelection();
-      if (!sel || sel.isCollapsed) {
-        if (activeSelection) setActiveSelection(null);
+    // Pulihkan posisi baca
+    requestAnimationFrame(() => {
+      const posStr = localStorage.getItem(`pos_${book.id}`);
+      if (posStr) {
+        try {
+          const { blockId, fraction } = JSON.parse(posStr);
+          const el = container.querySelector(`[data-block-id="${blockId}"]`) as HTMLElement;
+          if (el) {
+            const top = el.getBoundingClientRect().top + window.scrollY;
+            const toolbarH = 56;
+            window.scrollTo({ top: top + el.offsetHeight * fraction - toolbarH, behavior: 'instant' });
+          }
+        } catch {}
+      }
+    });
+
+    // Tracking scroll untuk simpan posisi (debounced 600ms)
+    let scrollTid: ReturnType<typeof setTimeout>;
+    const onScroll = () => {
+      clearTimeout(scrollTid);
+      scrollTid = setTimeout(() => saveReadPosition(container, book), 600);
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+
+    // Klik tombol halaman asli
+    const onContainerClick = (e: MouseEvent) => {
+      const btn = (e.target as HTMLElement).closest('.block-page-btn');
+      if (btn) {
+        e.stopPropagation();
+        const p = parseInt((btn as HTMLElement).dataset.page || '1', 10);
+        setOriginalPage(p);
         return;
       }
-      const segments = getSelectionSegments(sel);
-      if (segments) {
-        setActiveSelection({ segments, text: sel.toString() });
-      } else {
+      const mark = (e.target as HTMLElement).closest('mark[data-hl]');
+      if (mark) {
+        e.stopPropagation();
+        setActiveHlId((mark as HTMLElement).dataset.hl || null);
+        return;
+      }
+    };
+    container.addEventListener('click', onContainerClick);
+
+    // Seleksi teks
+    const onSelectionChange = () => {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || sel.toString().trim() === '') {
         setActiveSelection(null);
+        return;
       }
+      const segs = getSelectionSegments(sel);
+      if (segs) setActiveSelection({ segments: segs, text: sel.toString() });
+      else setActiveSelection(null);
     };
-    document.addEventListener('selectionchange', handleSelection);
-
-    // Event handler klik pada mark highlight yang sudah ada
-    const onMarkClick = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      const hlId = target.dataset.hl;
-      if (hlId) {
-        e.stopPropagation(); // Jangan toggle toolbar utama
-        setActiveHlId(hlId);
-      }
-    };
-    container.addEventListener('click', onMarkClick);
-
-    // Pulihkan posisi baca sebelumnya
-    const restorePos = () => {
-      const posStr = localStorage.getItem(`pos_${book.id}`);
-      if (!posStr) return;
-      try {
-        const { blockId, fraction } = JSON.parse(posStr);
-        const el = container.querySelector(`[data-block-id="${blockId}"]`) as HTMLElement;
-        if (el) {
-          // Hitung posisi gulir absolut
-          const top = el.offsetTop + (el.offsetHeight * fraction);
-          container.scrollTop = top - 40; // Kurangi sedikit padding atas
-        }
-      } catch (e) {}
-    };
-    
-    // Panggil setelah DOM ter-render
-    setTimeout(restorePos, 100);
-
-    // Lacak dan simpan posisi baca saat menggulir (di-debounce 500ms)
-    let scrollTimeout: any;
-    const onScroll = () => {
-      clearTimeout(scrollTimeout);
-      scrollTimeout = setTimeout(() => {
-        const rect = container.getBoundingClientRect();
-        const blocks = container.querySelectorAll('.book-block');
-        
-        for (let i = 0; i < blocks.length; i++) {
-          const bRect = blocks[i].getBoundingClientRect();
-          // Cari blok pertama yang bersinggungan dengan viewport atas
-          if (bRect.bottom > rect.top && bRect.top < rect.bottom) {
-             const blockId = (blocks[i] as HTMLElement).dataset.blockId;
-             // Fraksi = seberapa jauh kita menscroll melewati bagian atas blok tersebut
-             let fraction = 0;
-             if (bRect.top < rect.top) {
-               fraction = (rect.top - bRect.top) / bRect.height;
-             }
-             
-             // Hitung persentase global
-             let currentIdx = 0;
-             let totalBlocks = 0;
-             let found = false;
-             for (const c of book.chapters) {
-               if (!found) {
-                 const idx = c.blocks.findIndex(bl => bl.id === blockId);
-                 if (idx !== -1) {
-                   currentIdx += idx;
-                   found = true;
-                 } else {
-                   currentIdx += c.blocks.length;
-                 }
-               }
-               totalBlocks += c.blocks.length;
-             }
-             const percent = totalBlocks > 0 ? Math.round((currentIdx / totalBlocks) * 100) : 0;
-             
-             localStorage.setItem(`pos_${book.id}`, JSON.stringify({ blockId, fraction, percent }));
-             break;
-          }
-        }
-      }, 500);
-    };
-    container.addEventListener('scroll', onScroll);
+    document.addEventListener('selectionchange', onSelectionChange);
 
     return () => {
-      container.removeEventListener('click', onBlockClick);
-      container.removeEventListener('click', onMarkClick);
-      container.removeEventListener('scroll', onScroll);
-      document.removeEventListener('selectionchange', handleSelection);
+      window.removeEventListener('scroll', onScroll);
+      container.removeEventListener('click', onContainerClick);
+      document.removeEventListener('selectionchange', onSelectionChange);
+      clearTimeout(scrollTid);
     };
   }, [book]);
 
-  async function handleCreateHighlight(color: string) {
+  // Toggle toolbar saat klik area buku (bukan tombol/link/mark)
+  function handlePageClick(e: MouseEvent) {
+    const t = e.target as HTMLElement;
+    if (t.closest('button') || t.closest('a') || t.closest('mark') || t.closest('.block-page-btn')) return;
+    if (window.getSelection()?.toString()) return;
+    setShowToolbar(v => !v);
+    setShowSettings(false);
+  }
+
+  // ─── Highlight actions ───
+  async function createHighlight(color: HlColor) {
     if (!activeSelection) return;
-    const text = activeSelection.text;
-    // Potong prefix/suffix untuk anchoring jika versi berubah (sepanjang 32 char)
     const hl: Highlight = {
       id: crypto.randomUUID(),
       bookId: book.id,
       groupSegments: activeSelection.segments,
-      text,
-      prefix: '', // belum diimplementasikan full prefix pencarian fallback
+      text: activeSelection.text,
+      prefix: '',
       suffix: '',
       color,
       parserVersion: book.parserVersion,
       createdAt: Date.now(),
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
     };
     await saveHighlight(hl);
     setHighlights(prev => [...prev, hl]);
@@ -208,7 +144,7 @@ export function Reader({ book, onBack }: { book: Book; onBack: () => void }) {
     window.getSelection()?.removeAllRanges();
   }
 
-  async function handleUpdateHighlight(id: string, color: string) {
+  async function updateHighlightColor(id: string, color: string) {
     const hl = highlights.find(h => h.id === id);
     if (!hl) return;
     const updated = { ...hl, color, updatedAt: Date.now() };
@@ -217,28 +153,23 @@ export function Reader({ book, onBack }: { book: Book; onBack: () => void }) {
     setActiveHlId(null);
   }
 
-  async function handleDeleteHighlight(id: string) {
+  async function saveNote(id: string, note: string) {
+    const hl = highlights.find(h => h.id === id);
+    if (!hl) return;
+    const updated = { ...hl, note, updatedAt: Date.now() };
+    await saveHighlight(updated);
+    setHighlights(prev => prev.map(h => h.id === id ? updated : h));
+  }
+
+  async function removeHighlight(id: string) {
     await deleteHighlight(id);
     setHighlights(prev => prev.filter(h => h.id !== id));
     setActiveHlId(null);
   }
 
-  function handleCenterClick(e: MouseEvent) {
-    // Jika user menyeleksi teks, jangan toggle toolbar
-    const selection = window.getSelection();
-    if (selection && selection.toString().length > 0) return;
-    
-    // Cek apakah klik terjadi di margin/tengah (bukan di link atau tombol)
-    const target = e.target as HTMLElement;
-    if (target.closest('button') || target.closest('a')) return;
-    
-    setShowToolbar(prev => !prev);
-    setShowSettings(false); // Tutup drawer bila toolbar di-toggle
-  }
-
-  function exportMd() {
-    let md = `# Kutipan dari ${book.title}\n\n`;
-    highlights.sort((a,b) => a.createdAt - b.createdAt).forEach(hl => {
+  function exportMarkdown() {
+    let md = `# Kutipan — ${book.title}\n\n`;
+    [...highlights].sort((a, b) => a.createdAt - b.createdAt).forEach(hl => {
       md += `> ${hl.text}\n`;
       if (hl.note) md += `\n**Catatan:** ${hl.note}\n`;
       md += `\n---\n\n`;
@@ -249,377 +180,423 @@ export function Reader({ book, onBack }: { book: Book; onBack: () => void }) {
     a.href = url;
     a.download = `${book.title} - Kutipan.md`;
     a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
   }
 
+  const activeHl = highlights.find(h => h.id === activeHlId);
+
   return (
-    <div 
-      style={{ position: 'relative', width: '100%', height: '100dvh', overflowY: 'auto' }} 
-      onClick={handleCenterClick}
-    >
-      {/* Kontainer Utama Buku (Vanilla DOM) */}
-      <div className="reader-container" ref={containerRef} />
-      
-      {/* Top Toolbar */}
-      <div style={{
-        position: 'fixed', top: 0, left: 0, right: 0, 
-        padding: 'calc(15px + var(--safe-top)) 15px 15px 15px', 
-        background: 'var(--toolbar-bg)',
-        borderBottom: '1px solid var(--border-color)',
-        display: showToolbar ? 'flex' : 'none',
-        justifyContent: 'space-between',
-        transition: 'opacity 0.3s',
-        zIndex: 100
-      }}>
-        <button onClick={(e) => { e.stopPropagation(); onBack(); }} style={btnStyle}>← Kembali</button>
-        <div>
-          <button onClick={(e) => { e.stopPropagation(); setShowHighlightsDrawer(true); setShowSettings(false); }} style={{ ...btnStyle, marginRight: 10 }}>Penanda</button>
-          <button style={{ ...btnStyle, marginRight: 10 }}>Daftar Isi</button>
-          <button onClick={(e) => { e.stopPropagation(); setShowSettings(!showSettings); setShowHighlightsDrawer(false); }} style={btnStyle}>Aa</button>
+    <div class="reader-page" onClick={handlePageClick}>
+      {/* Toolbar atas */}
+      <div class={`reader-toolbar${showToolbar ? '' : ' hidden'}`} onClick={e => e.stopPropagation()}>
+        <button class="btn btn-sm" onClick={onBack}>← Kembali</button>
+        <span class="toolbar-title">{book.title}</span>
+        <div class="toolbar-actions">
+          <button class="btn btn-sm" onClick={() => { setShowHlDrawer(true); setShowSettings(false); }}>Penanda</button>
+          <button class="btn btn-sm" onClick={() => { setShowSettings(v => !v); setShowHlDrawer(false); }}>Aa</button>
         </div>
       </div>
 
-      {/* Settings Drawer */}
+      {/* Isi buku */}
+      <div class="reader-content" ref={contentRef} />
+
+      {/* Overlay untuk menutup panel */}
+      {(showSettings || showHlDrawer) && (
+        <div class="overlay-backdrop" onClick={() => { setShowSettings(false); setShowHlDrawer(false); }} />
+      )}
+
+      {/* Panel pengaturan */}
       {showSettings && (
-        <div style={{
-          position: 'fixed', top: '70px', right: '15px',
-          background: 'var(--toolbar-bg)',
-          border: '1px solid var(--border-color)',
-          padding: '15px',
-          borderRadius: '8px',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-          zIndex: 101,
-          maxHeight: '80vh',
-          overflowY: 'auto'
-        }} onClick={e => e.stopPropagation()}>
-          <h4 style={{ marginBottom: 10 }}>Tema</h4>
-          <div style={{ display: 'flex', gap: 10, marginBottom: 15, flexWrap: 'wrap' }}>
-            {['light', 'sepia', 'warm', 'dark'].map(t => (
-              <button 
-                key={t}
-                onClick={() => settings.value = { ...settings.value, theme: t as any }}
-                style={{
-                  ...btnStyle,
-                  background: settings.value.theme === t ? 'var(--text-color)' : 'transparent',
-                  color: settings.value.theme === t ? 'var(--bg-color)' : 'var(--text-color)',
-                  textTransform: 'capitalize'
-                }}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
-          
-          <h4 style={{ marginBottom: 10 }}>Ukuran Teks: {settings.value.fontSize}px</h4>
-          <input 
-            type="range" min="14" max="32" step="1" 
-            value={settings.value.fontSize}
-            onChange={(e) => settings.value = { ...settings.value, fontSize: Number((e.target as HTMLInputElement).value) }}
-            style={{ width: '100%', marginBottom: 15 }}
-          />
-
-          <h4 style={{ marginBottom: 10 }}>Font</h4>
-          <select 
-            value={settings.value.fontFamily}
-            onChange={(e) => settings.value = { ...settings.value, fontFamily: (e.target as HTMLSelectElement).value as any }}
-            style={{ width: '100%', padding: '8px', marginBottom: 15, background: 'var(--bg-color)', color: 'var(--text-color)', border: '1px solid var(--border-color)' }}
-          >
-            {['Literata', 'Lora', 'Merriweather', 'Inter', 'Lexend', 'OpenDyslexic'].map(f => (
-              <option key={f} value={f}>{f}</option>
-            ))}
-          </select>
-
-          <h4 style={{ marginBottom: 10 }}>Jarak Baris: {settings.value.lineHeight}</h4>
-          <input 
-            type="range" min="1.2" max="2.5" step="0.1" 
-            value={settings.value.lineHeight}
-            onChange={(e) => settings.value = { ...settings.value, lineHeight: Number((e.target as HTMLInputElement).value) }}
-            style={{ width: '100%', marginBottom: 15 }}
-          />
-
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 15 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input type="checkbox" checked={settings.value.indent} onChange={e => settings.value = { ...settings.value, indent: (e.target as HTMLInputElement).checked }} />
-              Menjorok
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input type="checkbox" checked={settings.value.dropCap} onChange={e => settings.value = { ...settings.value, dropCap: (e.target as HTMLInputElement).checked }} />
-              Drop Cap
-            </label>
-          </div>
-
-          <div style={{ display: 'flex', gap: 10, marginBottom: 15 }}>
-            <button 
-              onClick={() => settings.value = { ...settings.value, alignment: 'left' }}
-              style={{ ...btnStyle, flex: 1, background: settings.value.alignment === 'left' ? 'var(--text-color)' : 'transparent', color: settings.value.alignment === 'left' ? 'var(--bg-color)' : 'var(--text-color)' }}
-            >Rata Kiri</button>
-            <button 
-              onClick={() => settings.value = { ...settings.value, alignment: 'justify' }}
-              style={{ ...btnStyle, flex: 1, background: settings.value.alignment === 'justify' ? 'var(--text-color)' : 'transparent', color: settings.value.alignment === 'justify' ? 'var(--bg-color)' : 'var(--text-color)' }}
-            >Kanan Kiri</button>
-          </div>
-        </div>
+        <SettingsPanel onClose={() => setShowSettings(false)} />
       )}
 
-      {/* Highlights Drawer */}
-      {showHighlightsDrawer && (
-        <div style={{
-          position: 'fixed', top: 0, bottom: 0, right: 0, width: '100%', maxWidth: '350px',
-          background: 'var(--bg-color)', borderLeft: '1px solid var(--border-color)',
-          boxShadow: '-4px 0 15px rgba(0,0,0,0.1)', zIndex: 102, display: 'flex', flexDirection: 'column'
-        }} onClick={e => e.stopPropagation()}>
-          <div style={{ padding: '15px calc(15px + var(--safe-right)) 15px 15px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 style={{ margin: 0 }}>Penanda ({highlights.length})</h3>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={exportMd} style={btnStyle}>↓ MD</button>
-              <button onClick={() => setShowHighlightsDrawer(false)} style={{ ...btnStyle, border: 'none', padding: 5 }}>✕</button>
-            </div>
-          </div>
-          <div style={{ flex: 1, overflowY: 'auto', padding: '15px calc(15px + var(--safe-right)) 15px 15px' }}>
-            {highlights.length === 0 ? (
-              <p style={{ opacity: 0.5, textAlign: 'center', marginTop: 30 }}>Belum ada penanda di buku ini.</p>
-            ) : (
-              highlights.sort((a,b) => b.createdAt - a.createdAt).map(hl => (
-                <div key={hl.id} 
-                  style={{ padding: 12, border: '1px solid var(--border-color)', borderRadius: 8, marginBottom: 12, cursor: 'pointer' }}
-                  onClick={() => {
-                     setShowHighlightsDrawer(false);
-                     const el = containerRef.current?.querySelector(`[data-block-id="${hl.groupSegments[0].blockId}"]`);
-                     if (el) {
-                       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                       // blink effect could be added here
-                     }
-                  }}
-                >
-                  <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                    <div style={{ width: 12, height: 12, borderRadius: '50%', background: hl.color === 'yellow' ? '#fde047' : hl.color === 'green' ? '#86efac' : hl.color === 'blue' ? '#93c5fd' : hl.color === 'pink' ? '#f9a8d4' : '#d8b4fe' }} />
-                    <span style={{ fontSize: '0.8em', opacity: 0.6 }}>{new Date(hl.createdAt).toLocaleDateString()}</span>
-                  </div>
-                  <p style={{ margin: 0, fontSize: '0.9em', fontStyle: 'italic', opacity: 0.9 }}>"{hl.text}"</p>
-                  {hl.note && <p style={{ margin: '8px 0 0 0', fontSize: '0.85em', background: 'var(--toolbar-bg)', padding: 8, borderRadius: 4 }}>📝 {hl.note}</p>}
-                </div>
-              ))
-            )}
-          </div>
-        </div>
+      {/* Drawer highlight */}
+      {showHlDrawer && (
+        <HighlightsDrawer
+          highlights={highlights}
+          contentRef={contentRef}
+          onClose={() => setShowHlDrawer(false)}
+          onExportMd={exportMarkdown}
+          onSaveNote={saveNote}
+          onDelete={removeHighlight}
+        />
       )}
 
-      {/* Modal Halaman Asli */}
-      {originalPage && (
+      {/* Modal PDF asli */}
+      {originalPage != null && (
         <PdfModal bookId={book.id} pageNum={originalPage} onClose={() => setOriginalPage(null)} />
       )}
 
-      {/* Bar Aksi Seleksi Baru */}
-      {activeSelection && (
-        <HighlightMenu 
-          onColor={(color) => handleCreateHighlight(color)}
-          onSaveNote={async (note) => {
-             // Create default yellow highlight with note
-             if (!activeSelection) return;
-             const hl: Highlight = {
-               id: crypto.randomUUID(), bookId: book.id, groupSegments: activeSelection.segments,
-               text: activeSelection.text, prefix: '', suffix: '', color: 'yellow', note,
-               parserVersion: book.parserVersion, createdAt: Date.now(), updatedAt: Date.now()
-             };
-             await saveHighlight(hl);
-             setHighlights(prev => [...prev, hl]);
-             setActiveSelection(null);
-             window.getSelection()?.removeAllRanges();
-          }}
-          onCancel={() => { window.getSelection()?.removeAllRanges(); setActiveSelection(null); }} 
+      {/* Bar aksi seleksi baru */}
+      {activeSelection && !activeHlId && (
+        <HighlightBar
+          onColor={createHighlight}
+          onCancel={() => { window.getSelection()?.removeAllRanges(); setActiveSelection(null); }}
         />
       )}
 
-      {/* Bar Aksi Edit Highlight */}
-      {activeHlId && (
-        <HighlightMenu 
-          isEdit={true}
-          hlColor={highlights.find(h => h.id === activeHlId)?.color}
-          initialNote={highlights.find(h => h.id === activeHlId)?.note}
-          onColor={(color) => handleUpdateHighlight(activeHlId, color)}
-          onSaveNote={async (note) => {
-             const hl = highlights.find(h => h.id === activeHlId);
-             if (!hl) return;
-             const updated = { ...hl, note, updatedAt: Date.now() };
-             await saveHighlight(updated);
-             setHighlights(prev => prev.map(h => h.id === activeHlId ? updated : h));
-          }}
-          onDelete={() => handleDeleteHighlight(activeHlId)}
-          onCancel={() => setActiveHlId(null)} 
+      {/* Bar aksi edit highlight */}
+      {activeHlId && activeHl && (
+        <HighlightBar
+          isEdit
+          currentColor={activeHl.color as HlColor}
+          onColor={c => updateHighlightColor(activeHlId, c)}
+          onDelete={() => removeHighlight(activeHlId)}
+          onCancel={() => setActiveHlId(null)}
         />
       )}
     </div>
   );
 }
 
-function HighlightMenu({ onColor, onCancel, onDelete, isEdit, hlColor, initialNote, onSaveNote }: { onColor: (c: string) => void, onCancel: () => void, onDelete?: () => void, isEdit?: boolean, hlColor?: string, initialNote?: string, onSaveNote?: (note: string) => void }) {
-  const colors = ['yellow', 'green', 'blue', 'pink', 'purple'];
-  const [note, setNote] = useState(initialNote || '');
-  const [showNote, setShowNote] = useState(!!initialNote);
+// ─── Build DOM buku ───
+
+function buildBookDOM(container: HTMLElement, book: Book) {
+  book.chapters.forEach(chapter => {
+    const chapEl = document.createElement('div');
+    chapEl.className = 'book-chapter';
+    chapEl.id = `chap-${chapter.id}`;
+
+    if (chapter.label) {
+      const el = document.createElement('div');
+      el.className = 'book-h level-bab';
+      el.textContent = chapter.label;
+      chapEl.appendChild(el);
+    }
+    if (chapter.title) {
+      const el = document.createElement('h2');
+      el.className = 'book-h level-judul';
+      el.textContent = chapter.title;
+      chapEl.appendChild(el);
+    }
+    if (chapter.subtitle) {
+      const el = document.createElement('h3');
+      el.className = 'book-h level-sub';
+      el.textContent = chapter.subtitle;
+      chapEl.appendChild(el);
+    }
+
+    chapter.blocks.forEach(block => {
+      chapEl.appendChild(createBlockEl(book.id, block));
+    });
+
+    container.appendChild(chapEl);
+  });
+}
+
+function createBlockEl(bookId: string, block: Block): HTMLElement {
+  if (block.type === 'img') {
+    const wrap = document.createElement('div');
+    wrap.className = 'book-block book-img-container';
+    wrap.dataset.blockId = block.id;
+    const img = document.createElement('img');
+    img.className = 'book-img';
+    img.alt = '';
+    if (block.imgW) img.width = block.imgW;
+    if (block.imgH) img.height = block.imgH;
+    wrap.appendChild(img);
+    if (block.imgKey) {
+      getBlob(`${bookId}_${block.imgKey}`).then(blob => {
+        if (blob) img.src = URL.createObjectURL(blob);
+      });
+    }
+    return wrap;
+  }
+
+  if (block.type === 'orn') {
+    const el = document.createElement('div');
+    el.className = 'book-block book-orn';
+    el.dataset.blockId = block.id;
+    return el;
+  }
+
+  const tag = block.type === 'h' ? 'h3' : 'p';
+  const el = document.createElement(tag);
+  el.className = `book-block book-${block.type}${block.type === 'h' ? ' level-sub' : ''}`;
+  el.dataset.blockId = block.id;
+
+  // Tombol lihat halaman asli
+  const pageBtn = document.createElement('button');
+  pageBtn.className = 'block-page-btn';
+  pageBtn.textContent = String(block.page);
+  pageBtn.dataset.page = String(block.page);
+  pageBtn.title = `Halaman PDF asli: ${block.page}`;
+  el.appendChild(pageBtn);
+
+  // Isi teks (dengan format italic/bold)
+  if (block.runs) {
+    block.runs.forEach(run => {
+      if (!run.f) {
+        el.appendChild(document.createTextNode(run.t));
+      } else {
+        const span = document.createElement('span');
+        span.className = run.f;
+        span.textContent = run.t;
+        el.appendChild(span);
+      }
+    });
+  }
+
+  return el;
+}
+
+function saveReadPosition(container: HTMLElement, book: Book) {
+  const blocks = container.querySelectorAll('.book-block');
+  const viewTop = window.scrollY;
+  const viewH = window.innerHeight;
+
+  for (const block of Array.from(blocks)) {
+    const el = block as HTMLElement;
+    const top = el.getBoundingClientRect().top + window.scrollY;
+    const bottom = top + el.offsetHeight;
+    if (bottom > viewTop && top < viewTop + viewH) {
+      const blockId = el.dataset.blockId;
+      const fraction = Math.max(0, (viewTop - top) / Math.max(1, el.offsetHeight));
+
+      let idx = 0, total = 0, found = false;
+      for (const c of book.chapters) {
+        for (const b of c.blocks) {
+          if (!found) idx++;
+          if (b.id === blockId) found = true;
+          total++;
+        }
+      }
+      const percent = total > 0 ? Math.round((idx / total) * 100) : 0;
+      localStorage.setItem(`pos_${book.id}`, JSON.stringify({ blockId, fraction, percent }));
+      break;
+    }
+  }
+}
+
+// ─── Komponen: Bar aksi highlight ───
+
+function HighlightBar({
+  onColor, onCancel, onDelete, isEdit, currentColor
+}: {
+  onColor: (c: HlColor) => void;
+  onCancel: () => void;
+  onDelete?: () => void;
+  isEdit?: boolean;
+  currentColor?: HlColor;
+}) {
+  return (
+    <div class="hl-bar" onClick={e => e.stopPropagation()}>
+      {HL_COLORS.map(c => (
+        <button
+          key={c}
+          class={`color-dot dot-${c}${currentColor === c ? ' active' : ''}`}
+          onClick={() => onColor(c)}
+          title={c}
+        />
+      ))}
+      <div class="hl-sep" />
+      {isEdit && onDelete && (
+        <button class="btn btn-sm btn-danger" style={{ border: 'none', padding: '4px 8px' }} onClick={onDelete}>Hapus</button>
+      )}
+      <button class="btn btn-sm btn-icon" style={{ border: 'none' }} onClick={onCancel}>✕</button>
+    </div>
+  );
+}
+
+// ─── Komponen: Panel pengaturan ───
+
+function SettingsPanel({ onClose }: { onClose: () => void }) {
+  const s = settings.value;
 
   return (
-    <div style={{
-      position: 'fixed', bottom: 'env(safe-area-inset-bottom, 15px)', left: '50%', transform: 'translateX(-50%)',
-      background: 'var(--toolbar-bg)', border: '1px solid var(--border-color)', borderRadius: 12,
-      padding: '8px 15px', display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center', boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
-      zIndex: 200, width: '90%', maxWidth: '350px'
-    }} onClick={e => e.stopPropagation()}>
-      
-      {showNote ? (
-        <div style={{ width: '100%', display: 'flex', gap: 8 }}>
-          <input 
-            type="text" 
-            placeholder="Tulis catatan..." 
-            value={note} 
-            onChange={e => setNote((e.target as HTMLInputElement).value)} 
-            style={{ flex: 1, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border-color)', background: 'var(--bg-color)', color: 'var(--text-color)' }}
-          />
-          <button onClick={() => { onSaveNote?.(note); setShowNote(false); }} style={{ ...btnStyle, background: 'var(--text-color)', color: 'var(--bg-color)', border: 'none' }}>Simpan</button>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center', width: '100%', justifyContent: 'center' }}>
-          {colors.map(c => (
-            <button key={c} onClick={() => onColor(c)} style={{
-              width: 28, height: 28, borderRadius: '50%', border: hlColor === c ? '2px solid var(--text-color)' : '1px solid rgba(0,0,0,0.1)', cursor: 'pointer',
-              background: c === 'yellow' ? '#fde047' : c === 'green' ? '#86efac' : c === 'blue' ? '#93c5fd' : c === 'pink' ? '#f9a8d4' : '#d8b4fe'
-            }} />
+    <div class="settings-panel" onClick={e => e.stopPropagation()}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+        <span style={{ fontWeight: 600 }}>Pengaturan Baca</span>
+        <button class="btn btn-icon" style={{ border: 'none' }} onClick={onClose}>✕</button>
+      </div>
+
+      <div class="settings-section">
+        <span class="settings-label">Tema</span>
+        <div class="settings-row">
+          {['light', 'sepia', 'warm', 'dark'].map(t => (
+            <button key={t} class={`theme-btn${s.theme === t ? ' active' : ''}`}
+              onClick={() => settings.value = { ...s, theme: t as any }}>
+              {t === 'light' ? 'Terang' : t === 'sepia' ? 'Sepia' : t === 'warm' ? 'Hangat' : 'Gelap'}
+            </button>
           ))}
-          <div style={{ width: 1, height: 20, background: 'var(--border-color)', margin: '0 5px' }} />
-          <button onClick={() => setShowNote(true)} style={{ ...btnStyle, border: 'none', background: 'transparent' }}>📝</button>
-          {isEdit && <button onClick={onDelete} style={{ ...btnStyle, color: 'red', border: 'none', background: 'transparent' }}>Hapus</button>}
-          <button onClick={onCancel} style={{ ...btnStyle, border: 'none', background: 'transparent' }}>✕</button>
         </div>
-      )}
+      </div>
+
+      <div class="settings-section">
+        <span class="settings-label">Font</span>
+        <select
+          value={s.fontFamily}
+          onChange={e => settings.value = { ...s, fontFamily: (e.target as HTMLSelectElement).value as any }}
+          style={{ width: '100%', padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border-color)', background: 'var(--bg-color)', color: 'var(--text-color)', fontSize: '0.9rem', fontFamily: 'inherit' }}
+        >
+          {['Literata', 'Lora', 'Merriweather', 'Inter', 'Lexend', 'OpenDyslexic'].map(f => (
+            <option key={f} value={f}>{f}</option>
+          ))}
+        </select>
+      </div>
+
+      <div class="settings-section">
+        <span class="settings-label">Ukuran Teks</span>
+        <div class="range-row">
+          <span style={{ fontSize: '0.8rem', color: 'var(--secondary-text)' }}>A</span>
+          <input type="range" min={14} max={32} step={1} value={s.fontSize}
+            onChange={e => settings.value = { ...s, fontSize: Number((e.target as HTMLInputElement).value) }} />
+          <span style={{ fontSize: '1.1rem' }}>A</span>
+          <span class="range-val">{s.fontSize}px</span>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <span class="settings-label">Jarak Baris</span>
+        <div class="range-row">
+          <input type="range" min={1.2} max={2.5} step={0.05} value={s.lineHeight}
+            onChange={e => settings.value = { ...s, lineHeight: Number((e.target as HTMLInputElement).value) }} />
+          <span class="range-val">{s.lineHeight.toFixed(1)}</span>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <span class="settings-label">Tata Letak</span>
+        <div class="toggle-row">
+          <label>Teks rata kanan-kiri</label>
+          <input type="checkbox" checked={s.alignment === 'justify'}
+            onChange={e => settings.value = { ...s, alignment: (e.target as HTMLInputElement).checked ? 'justify' : 'left' }} />
+        </div>
+        <div class="toggle-row">
+          <label>Paragraf menjorok</label>
+          <input type="checkbox" checked={s.indent}
+            onChange={e => settings.value = { ...s, indent: (e.target as HTMLInputElement).checked }} />
+        </div>
+        <div class="toggle-row">
+          <label>Drop cap</label>
+          <input type="checkbox" checked={s.dropCap}
+            onChange={e => settings.value = { ...s, dropCap: (e.target as HTMLInputElement).checked }} />
+        </div>
+      </div>
     </div>
   );
 }
 
-const btnStyle = {
-  padding: '6px 12px',
-  background: 'transparent',
-  border: '1px solid var(--border-color)',
-  borderRadius: '4px',
-  color: 'var(--text-color)',
-  cursor: 'pointer',
-  fontSize: '14px'
-};
+// ─── Komponen: Drawer Highlights ───
 
-import * as pdfjs from 'pdfjs-dist';
-// @ts-ignore
-import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
+function HighlightsDrawer({
+  highlights, contentRef, onClose, onExportMd, onSaveNote, onDelete
+}: {
+  highlights: Highlight[];
+  contentRef: { current: HTMLDivElement | null };
+  onClose: () => void;
+  onExportMd: () => void;
+  onSaveNote: (id: string, note: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [editNoteId, setEditNoteId] = useState<string | null>(null);
+  const [noteText, setNoteText] = useState('');
+
+  const sorted = [...highlights].sort((a, b) => b.createdAt - a.createdAt);
+
+  function jumpTo(hl: Highlight) {
+    onClose();
+    const blockId = hl.groupSegments[0]?.blockId;
+    if (!blockId || !contentRef.current) return;
+    const el = contentRef.current.querySelector(`[data-block-id="${blockId}"]`) as HTMLElement;
+    if (el) {
+      const top = el.getBoundingClientRect().top + window.scrollY - 70;
+      window.scrollTo({ top, behavior: 'smooth' });
+      el.style.outline = '2px solid var(--link-color)';
+      setTimeout(() => { el.style.outline = ''; }, 2000);
+    }
+  }
+
+  return (
+    <div class="hl-drawer" onClick={e => e.stopPropagation()}>
+      <div class="hl-drawer-header">
+        <span style={{ fontWeight: 600 }}>Penanda ({highlights.length})</span>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {highlights.length > 0 && (
+            <button class="btn btn-sm" onClick={onExportMd}>↓ .md</button>
+          )}
+          <button class="btn btn-sm btn-icon" style={{ border: 'none' }} onClick={onClose}>✕</button>
+        </div>
+      </div>
+      <div class="hl-drawer-body">
+        {sorted.length === 0 ? (
+          <div class="empty-state">
+            <div class="icon">🖍️</div>
+            <p>Belum ada penanda.</p>
+            <p>Pilih teks saat membaca untuk menandainya.</p>
+          </div>
+        ) : sorted.map(hl => (
+          <div class="hl-card" key={hl.id} onClick={() => jumpTo(hl)}>
+            <div class="hl-card-meta">
+              <div class="hl-color-dot" style={{ background: COLOR_HEX[hl.color as HlColor] || '#ccc' }} />
+              <span class="hl-date">{new Date(hl.createdAt).toLocaleDateString('id-ID')}</span>
+            </div>
+            <div class="hl-card-text">"{hl.text}"</div>
+            {hl.note && editNoteId !== hl.id && (
+              <div class="hl-card-note">📝 {hl.note}</div>
+            )}
+            {editNoteId === hl.id && (
+              <div style={{ display: 'flex', gap: 6, marginTop: 6 }} onClick={e => e.stopPropagation()}>
+                <input
+                  type="text"
+                  value={noteText}
+                  onInput={e => setNoteText((e.target as HTMLInputElement).value)}
+                  placeholder="Tulis catatan..."
+                  style={{ flex: 1, padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border-color)', background: 'var(--bg-color)', color: 'var(--text-color)', fontSize: '0.85rem', fontFamily: 'inherit' }}
+                  onKeyDown={e => { if (e.key === 'Enter') { onSaveNote(hl.id, noteText); setEditNoteId(null); } }}
+                />
+                <button class="btn btn-sm btn-primary" onClick={() => { onSaveNote(hl.id, noteText); setEditNoteId(null); }}>Simpan</button>
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 6, marginTop: 8 }} onClick={e => e.stopPropagation()}>
+              <button class="btn btn-sm" onClick={() => { setEditNoteId(hl.id); setNoteText(hl.note || ''); }}>
+                {hl.note ? '✏️ Edit catatan' : '📝 Tambah catatan'}
+              </button>
+              <button class="btn btn-sm btn-danger" onClick={() => onDelete(hl.id)}>Hapus</button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Komponen: Modal PDF asli ───
 
 function PdfModal({ bookId, pageNum, onClose }: { bookId: string; pageNum: number; onClose: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    let renderTask: any;
+    let task: any;
     (async () => {
       try {
         const blob = await getBlob(`pdf_${bookId}`);
-        if (!blob) {
-          alert('PDF asli tidak ditemukan di database.');
-          return;
-        }
-        const buffer = await blob.arrayBuffer();
-        const pdf = await pdfjs.getDocument({
-          data: new Uint8Array(buffer),
-          standardFontDataUrl: '/node_modules/pdfjs-dist/standard_fonts/',
-        }).promise;
+        if (!blob) return;
+        const buf = await blob.arrayBuffer();
+        const pdf = await pdfjs.getDocument({ data: new Uint8Array(buf) }).promise;
         const page = await pdf.getPage(pageNum);
-        
-        // Sesuaikan skala render dengan layar
-        const scale = Math.min(2.0, window.innerWidth / page.getViewport({ scale: 1 }).width);
+        const scale = Math.min(2, (window.innerWidth - 40) / page.getViewport({ scale: 1 }).width);
         const vp = page.getViewport({ scale });
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        
+        const canvas = canvasRef.current!;
         canvas.width = vp.width;
         canvas.height = vp.height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-        renderTask = page.render({ canvasContext: ctx, viewport: vp } as any);
-        await renderTask.promise;
-      } catch (e) {
-        console.error('Gagal me-render PDF:', e);
-      }
+        const ctx = canvas.getContext('2d')!;
+        task = page.render({ canvasContext: ctx, viewport: vp } as any);
+        await task.promise;
+      } catch (e) { console.error('PDF render error:', e); }
     })();
-    return () => {
-      if (renderTask) renderTask.cancel();
-    };
+    return () => { if (task) task.cancel(); };
   }, [bookId, pageNum]);
 
   return (
-    <div 
-      style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', zIndex: 999, display: 'flex', flexDirection: 'column' }} 
-      onClick={onClose}
-    >
-       <div style={{ padding: '15px calc(15px + var(--safe-right)) 15px calc(15px + var(--safe-left))', background: '#111', color: '#fff', display: 'flex', justifyContent: 'space-between' }}>
-         <span>Halaman Asli: {pageNum}</span>
-         <button onClick={onClose} style={{ color: '#fff', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '16px' }}>Tutup</button>
-       </div>
-       <div style={{ flex: 1, overflow: 'auto', display: 'flex', justifyContent: 'center', padding: '20px calc(20px + var(--safe-right)) 20px calc(20px + var(--safe-left))' }}>
-         <canvas ref={canvasRef} style={{ background: '#fff', maxWidth: '100%', objectFit: 'contain' }} onClick={e => e.stopPropagation()} />
-       </div>
+    <div class="pdf-modal" onClick={onClose}>
+      <div class="pdf-modal-bar">
+        <span>Halaman PDF Asli #{pageNum}</span>
+        <button style={{ color: '#fff', background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.2rem' }} onClick={onClose}>✕</button>
+      </div>
+      <div class="pdf-modal-body" onClick={e => e.stopPropagation()}>
+        <canvas ref={canvasRef} style={{ maxWidth: '100%', background: '#fff', display: 'block' }} />
+      </div>
     </div>
   );
-}
-
-/** Fungsi merakit Vanilla DOM untuk sebuah blok */
-function createBlockElement(bookId: string, block: Block): HTMLElement {
-  let el: HTMLElement;
-  
-  if (block.type === 'p' || block.type === 'quote' || block.type === 'h' || block.type === 'orn') {
-    el = document.createElement(block.type === 'h' ? 'h3' : 'p');
-    el.className = `book-block book-${block.type}${block.type === 'h' ? ' level-sub' : ''}`;
-    el.dataset.blockId = block.id;
-
-    if (block.type === 'orn') {
-      return el; // Ornamen kosong (dibentuk lewat CSS ::after)
-    }
-
-    const actionBtn = document.createElement('span');
-    actionBtn.className = 'block-action-btn';
-    actionBtn.textContent = '¶';
-    actionBtn.dataset.page = String(block.page);
-    el.appendChild(actionBtn);
-
-    // Bangun teks berformat
-    if (block.runs) {
-      block.runs.forEach(run => {
-        if (!run.f) {
-          el.appendChild(document.createTextNode(run.t));
-        } else {
-          const span = document.createElement('span');
-          span.className = run.f; // 'i', 'b', 'ib'
-          span.textContent = run.t;
-          el.appendChild(span);
-        }
-      });
-    }
-  } else if (block.type === 'img') {
-    el = document.createElement('div');
-    el.className = 'book-block book-img-container';
-    el.dataset.blockId = block.id;
-    
-    const img = document.createElement('img');
-    img.className = 'book-img';
-    if (block.imgW && block.imgH) {
-      img.width = block.imgW;
-      img.height = block.imgH;
-    }
-    el.appendChild(img);
-    
-    // Muat gambar secara asinkron dari IndexedDB
-    if (block.imgKey) {
-      getBlob(`${bookId}_${block.imgKey}`).then(blob => {
-        if (blob) {
-          img.src = URL.createObjectURL(blob);
-        }
-      });
-    }
-  } else {
-    el = document.createElement('div'); // Fallback
-  }
-  
-  return el;
 }
