@@ -86,7 +86,7 @@ export async function parsePdf(
 
   const pdf = await pdfjs.getDocument({
     data: new Uint8Array(buffer),
-    standardFontDataUrl: 'node_modules/pdfjs-dist/standard_fonts/',
+    useSystemFonts: true,
   }).promise;
   const total = pdf.numPages;
 

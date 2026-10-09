@@ -36,7 +36,7 @@ self.onmessage = async (e: MessageEvent<{ buffer: ArrayBuffer; title: string; au
       // Load PDF sekali lagi untuk render (membutuhkan copy buffer baru)
       const pdf = await pdfjs.getDocument({
         data: new Uint8Array(buffer.slice(0)),
-        standardFontDataUrl: 'node_modules/pdfjs-dist/standard_fonts/',
+        useSystemFonts: true,
       }).promise;
 
       for (let i = 0; i < imgJobs.length; i++) {
@@ -89,7 +89,7 @@ self.onmessage = async (e: MessageEvent<{ buffer: ArrayBuffer; title: string; au
       self.postMessage({ type: 'progress', page: 1, total: 1, message: 'Menyiapkan sampul...' } as any);
       const pdf = await pdfjs.getDocument({
         data: new Uint8Array(buffer.slice(0)),
-        standardFontDataUrl: 'node_modules/pdfjs-dist/standard_fonts/',
+        useSystemFonts: true,
       }).promise;
       const page1 = await pdf.getPage(1);
       const vp1 = page1.getViewport({ scale: 0.5 }); // Ukuran kecil untuk thumbnail

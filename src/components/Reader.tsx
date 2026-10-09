@@ -573,7 +573,7 @@ function PdfModal({ bookId, pageNum, onClose }: { bookId: string; pageNum: numbe
         const blob = await getBlob(`pdf_${bookId}`);
         if (!blob) return;
         const buf = await blob.arrayBuffer();
-        const pdf = await pdfjs.getDocument({ data: new Uint8Array(buf) }).promise;
+        const pdf = await pdfjs.getDocument({ data: new Uint8Array(buf), useSystemFonts: true }).promise;
         const page = await pdf.getPage(pageNum);
         const scale = Math.min(2, (window.innerWidth - 40) / page.getViewport({ scale: 1 }).width);
         const vp = page.getViewport({ scale });
