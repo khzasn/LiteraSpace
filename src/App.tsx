@@ -8,6 +8,31 @@ import { parsePdf } from './worker/parser';
 import { PARSER_VERSION } from './worker/parser-constants';
 import { coverBlobKey, pdfBlobKey } from './lib/keys';
 
+function reparseBookInWorker(
+  buffer: ArrayBuffer,
+  title: string,
+  author: string
+): Promise<{ book: Book; blobs?: Record<string, Blob> }> {
+  return new Promise((resolve, reject) => {
+    const worker = new ParserWorker();
+    worker.onmessage = (e: MessageEvent) => {
+      const msg = e.data;
+      if (msg.type === 'done') {
+        worker.terminate();
+        resolve({ book: msg.book, blobs: msg.blobs });
+      } else if (msg.type === 'error') {
+        worker.terminate();
+        reject(new Error(msg.message));
+      }
+    };
+    worker.onerror = (err) => {
+      worker.terminate();
+      reject(err);
+    };
+    worker.postMessage({ buffer, title, author }, [buffer]);
+  });
+}
+
 export function App() {
   const [books, setBooks] = useState<Book[]>([]);
   const [covers, setCovers] = useState<Record<string, string>>({});
@@ -33,9 +58,14 @@ export function App() {
           if (pdfBlob) {
             try {
               const buffer = await pdfBlob.arrayBuffer();
-              const { book: reParsed } = await parsePdf(buffer, b.title, b.author);
+              const { book: reParsed, blobs } = await reparseBookInWorker(buffer, b.title, b.author);
               reParsed.id = b.id; // Pertahankan ID agar blockId dan highlight tetap menempel
               await saveBook(reParsed);
+              if (blobs) {
+                for (const [k, blob] of Object.entries(blobs)) {
+                  await saveBlob(k, blob);
+                }
+              }
               bks[i] = reParsed;
             } catch (err) {
               console.warn('Gagal re-parse buku saat migrasi:', b.title, err);
