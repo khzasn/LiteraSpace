@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Book, Block, Highlight, HighlightSegment, Chapter } from '../types/book';
 import { getBlob, getHighlightsByBook, saveHighlight, deleteHighlight } from '../lib/db';
+import { imageBlobKey } from '../lib/keys';
 import { settings } from '../lib/settings';
 import { getSelectionSegments, renderHighlights } from '../lib/highlighter';
 import * as pdfjs from 'pdfjs-dist';
@@ -332,11 +333,9 @@ function createBlockEl(bookId: string, block: Block): HTMLElement {
     if (block.imgW) img.width = block.imgW;
     if (block.imgH) img.height = block.imgH;
     wrap.appendChild(img);
-    if (block.imgKey) {
-      getBlob(`${bookId}_${block.imgKey}`).then(blob => {
-        if (blob) img.src = URL.createObjectURL(blob);
-      });
-    }
+    getBlob(imageBlobKey(bookId, block.id)).then(blob => {
+      if (blob) img.src = URL.createObjectURL(blob);
+    });
     return wrap;
   }
 

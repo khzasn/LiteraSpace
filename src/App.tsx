@@ -6,6 +6,7 @@ import ParserWorker from './worker/parser.worker?worker';
 import type { ParserMessage } from './worker/parser';
 import { parsePdf } from './worker/parser';
 import { PARSER_VERSION } from './worker/parser-constants';
+import { coverBlobKey, pdfBlobKey } from './lib/keys';
 
 export function App() {
   const [books, setBooks] = useState<Book[]>([]);
@@ -27,7 +28,7 @@ export function App() {
       for (let i = 0; i < bks.length; i++) {
         const b = bks[i];
         if (b.parserVersion !== PARSER_VERSION) {
-          const pdfBlob = await getBlob(`pdf_${b.id}`);
+          const pdfBlob = await getBlob(pdfBlobKey(b.id));
           if (pdfBlob) {
             try {
               const buffer = await pdfBlob.arrayBuffer();
@@ -62,7 +63,7 @@ export function App() {
       setBooks(bks);
       const newCovers: Record<string, string> = {};
       for (const b of bks) {
-        const blob = await getBlob(`cover_${b.id}`);
+        const blob = await getBlob(coverBlobKey(b.id));
         if (blob) newCovers[b.id] = URL.createObjectURL(blob);
       }
       setCovers(newCovers);
@@ -131,7 +132,7 @@ export function App() {
         setProgress({ page: 1, total: 1, msg: 'Menyimpan ke database...' });
         try {
           // Simpan PDF asli menggunakan salinan buffer yang sudah disiapkan
-          await saveBlob(`pdf_${msg.book.id}`, new Blob([bufferForSave], { type: 'application/pdf' }));
+          await saveBlob(pdfBlobKey(msg.book.id), new Blob([bufferForSave], { type: 'application/pdf' }));
 
           // Simpan gambar + sampul
           if (msg.blobs) {
@@ -170,7 +171,12 @@ export function App() {
     const tx = db.transaction('blobs', 'readwrite');
     const keys = await tx.store.getAllKeys();
     for (const k of keys) {
-      if (typeof k === 'string' && k.includes(id)) await tx.store.delete(k);
+      if (
+        typeof k === 'string' &&
+        (k.startsWith(`img_${id}_`) || k === coverBlobKey(id) || k === pdfBlobKey(id) || k.includes(id))
+      ) {
+        await tx.store.delete(k);
+      }
     }
     await tx.done;
     // Hapus highlights

@@ -6,6 +6,7 @@
 import * as pdfjs from 'pdfjs-dist';
 import { parsePdf } from './parser';
 import type { ParserMessage } from './parser';
+import { imageBlobKey, coverBlobKey } from '../lib/keys';
 
 // @ts-ignore
 import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
@@ -81,7 +82,7 @@ self.onmessage = async (e: MessageEvent<{ buffer: ArrayBuffer; title: string; au
           );
 
           const blob = await cropCanvas.convertToBlob({ type: 'image/jpeg', quality: 0.85 });
-          blobs[`${book.id}_${job.blockId}`] = blob;
+          blobs[imageBlobKey(book.id, job.blockId)] = blob;
         } catch (imgErr) {
           console.warn('Gagal crop gambar halaman', job.page, imgErr);
         }
@@ -108,7 +109,7 @@ self.onmessage = async (e: MessageEvent<{ buffer: ArrayBuffer; title: string; au
         ctx1.fillRect(0, 0, vp1.width, vp1.height);
         await (page1.render as any)({ canvasContext: ctx1, viewport: vp1 }).promise;
         const coverBlob = await canvas1.convertToBlob({ type: 'image/jpeg', quality: 0.75 });
-        blobs[`cover_${book.id}`] = coverBlob;
+        blobs[coverBlobKey(book.id)] = coverBlob;
       }
     } catch (coverErr) {
       console.warn('Gagal membuat sampul:', coverErr);
