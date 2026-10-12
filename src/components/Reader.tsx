@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Book, Block, Highlight, HighlightSegment, Chapter } from '../types/book';
 import { getBlob, getHighlightsByBook, saveHighlight, deleteHighlight } from '../lib/db';
 import { imageBlobKey } from '../lib/keys';
+import { createBlockEl, showImagePlaceholder } from '../lib/blocks';
 import { settings } from '../lib/settings';
 import { getSelectionSegments, renderHighlights } from '../lib/highlighter';
 import * as pdfjs from 'pdfjs-dist';
@@ -320,60 +321,6 @@ function buildBookDOM(container: HTMLElement, book: Book) {
 
     container.appendChild(chapEl);
   });
-}
-
-function createBlockEl(bookId: string, block: Block): HTMLElement {
-  if (block.type === 'img') {
-    const wrap = document.createElement('div');
-    wrap.className = 'book-block book-img-container';
-    wrap.dataset.blockId = block.id;
-    const img = document.createElement('img');
-    img.className = 'book-img';
-    img.alt = '';
-    if (block.imgW) img.width = block.imgW;
-    if (block.imgH) img.height = block.imgH;
-    wrap.appendChild(img);
-    getBlob(imageBlobKey(bookId, block.id)).then(blob => {
-      if (blob) img.src = URL.createObjectURL(blob);
-    });
-    return wrap;
-  }
-
-  if (block.type === 'orn') {
-    const el = document.createElement('div');
-    el.className = 'book-block book-orn';
-    el.dataset.blockId = block.id;
-    return el;
-  }
-
-  const tag = block.type === 'h' ? 'h3' : 'p';
-  const el = document.createElement(tag);
-  el.className = `book-block book-${block.type}${block.type === 'h' ? ' level-sub' : ''}`;
-  el.dataset.blockId = block.id;
-
-  // Tombol lihat halaman asli
-  const pageBtn = document.createElement('button');
-  pageBtn.className = 'block-page-btn';
-  pageBtn.textContent = String(block.page);
-  pageBtn.dataset.page = String(block.page);
-  pageBtn.title = `Halaman PDF asli: ${block.page}`;
-  el.appendChild(pageBtn);
-
-  // Isi teks (dengan format italic/bold)
-  if (block.runs) {
-    block.runs.forEach(run => {
-      if (!run.f) {
-        el.appendChild(document.createTextNode(run.t));
-      } else {
-        const span = document.createElement('span');
-        span.className = run.f;
-        span.textContent = run.t;
-        el.appendChild(span);
-      }
-    });
-  }
-
-  return el;
 }
 
 function saveReadPosition(

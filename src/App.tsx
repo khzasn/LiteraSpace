@@ -16,6 +16,7 @@ export function App() {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState<{ page: number; total: number; msg: string } | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadWarning, setUploadWarning] = useState<string | null>(null);
 
   useEffect(() => { loadLibrary(); }, []);
 
@@ -145,6 +146,11 @@ export function App() {
           worker.terminate();
           setUploading(false);
           setProgress(null);
+          if (msg.imgStats && msg.imgStats.failed > 0) {
+            setUploadWarning(
+              `${msg.imgStats.success} dari ${msg.imgStats.total} gambar berhasil diproses (${msg.imgStats.failed} gambar gagal dipotong). Anda tetap dapat melihat halaman asli melalui tombol baca.`
+            );
+          }
           await loadLibrary();
         } catch (saveErr) {
           console.error('Gagal menyimpan:', saveErr);
@@ -278,6 +284,14 @@ export function App() {
           <div class="error-banner">
             ⚠️ {uploadError}
             <button onClick={() => setUploadError(null)} style={{ marginLeft: 10, background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}>✕</button>
+          </div>
+        )}
+
+        {/* Warning banner */}
+        {uploadWarning && (
+          <div class="warning-banner">
+            <span>ℹ️ {uploadWarning}</span>
+            <button onClick={() => setUploadWarning(null)} style={{ marginLeft: 10, background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}>✕</button>
           </div>
         )}
 

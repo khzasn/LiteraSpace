@@ -57,7 +57,7 @@ self.onmessage = async (e: MessageEvent<{ buffer: ArrayBuffer; title: string; au
           const canvas = new OffscreenCanvas(vp.width, vp.height);
           const ctx = canvas.getContext('2d');
           if (!ctx) continue;
-          await (page.render as any)({ canvasContext: ctx, viewport: vp }).promise;
+          await (page.render as any)({ canvas, canvasContext: ctx, viewport: vp }).promise;
 
           // Koordinat PDF: bottom-left → Canvas: top-left
           const cropY = (job.pageH - job.bbox.y1) * scale;
@@ -107,7 +107,7 @@ self.onmessage = async (e: MessageEvent<{ buffer: ArrayBuffer; title: string; au
       if (ctx1) {
         ctx1.fillStyle = '#ffffff';
         ctx1.fillRect(0, 0, vp1.width, vp1.height);
-        await (page1.render as any)({ canvasContext: ctx1, viewport: vp1 }).promise;
+        await (page1.render as any)({ canvas: canvas1, canvasContext: ctx1, viewport: vp1 }).promise;
         const coverBlob = await canvas1.convertToBlob({ type: 'image/jpeg', quality: 0.75 });
         blobs[coverBlobKey(book.id)] = coverBlob;
       }
@@ -135,7 +135,17 @@ self.onmessage = async (e: MessageEvent<{ buffer: ArrayBuffer; title: string; au
     }
 
     // ── 5. Kirim hasil ─────────────────────────────────────────────
-    self.postMessage({ type: 'done', book, imgJobs, blobs } as any);
+    const totalImgs = imgJobs.length;
+    const successImgs = Object.keys(blobs).filter(k => k.startsWith('img_')).length;
+    const failedImgs = totalImgs - successImgs;
+
+    self.postMessage({
+      type: 'done',
+      book,
+      imgJobs,
+      blobs,
+      imgStats: { total: totalImgs, success: successImgs, failed: failedImgs }
+    } as any);
 
   } catch (err: any) {
     const msg = err?.message || String(err);
