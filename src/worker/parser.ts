@@ -349,7 +349,7 @@ export async function parsePdf(
     ].sort((a, b) => b.y - a.y);
 
     // Deteksi epigraf: gugus 1-3 baris tepat setelah judul bab
-    if (filteredLines.some((l) => /^CHAPTER\s*\d+$/i.test(l.text))) {
+    if (filteredLines.some((l) => /^CHAPTER\s*(\d+|[IVXLCDM]+)$/i.test(l.text.trim()))) {
       let lastHead = -1;
       filteredLines.forEach((L, i) => {
         if (L.h >= SUBTITLE_SIZE) lastHead = i;
@@ -460,7 +460,7 @@ export async function parsePdf(
       if (/^PART\s*[IVX\d]+$/i.test(t.replace(/\s/g, '')) && L.h >= 20) {
         flushHeading();
         flushPara();
-        newChapter('part', t.replace(/^PART\s*/i, 'PART '));
+        newChapter('part', t.trim().replace(/\s+/g, ' '));
         cur!._hdr = true;
         pendingPara = null;
         firstOnPage = false;
@@ -468,10 +468,10 @@ export async function parsePdf(
       }
 
       // CHAPTER N
-      if (/^CHAPTER\s*\d+$/i.test(t)) {
+      if (/^CHAPTER\s*(\d+|[IVXLCDM]+)$/i.test(t.trim())) {
         flushHeading();
         flushPara();
-        newChapter('chapter', t.replace(/^CHAPTER\s*/i, 'BAB '));
+        newChapter('chapter', t.trim().replace(/\s+/g, ' '));
         pendingPara = null;
         firstOnPage = false;
         continue;

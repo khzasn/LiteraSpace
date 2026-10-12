@@ -4,7 +4,7 @@
  */
 
 /** Versi parser. Naikkan saat logika berubah (memicu re-anchor highlight). */
-export const PARSER_VERSION = '1.0.0';
+export const PARSER_VERSION = '1.1.0';
 
 /** Toleransi baseline-y saat mengelompokkan item teks menjadi baris (pt) */
 export const LINE_Y_TOLERANCE = 2.5;

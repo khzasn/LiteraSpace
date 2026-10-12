@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import type { Book, Block, Highlight, HighlightSegment } from '../types/book';
+import type { Book, Block, Highlight, HighlightSegment, Chapter } from '../types/book';
 import { getBlob, getHighlightsByBook, saveHighlight, deleteHighlight } from '../lib/db';
 import { settings } from '../lib/settings';
 import { getSelectionSegments, renderHighlights } from '../lib/highlighter';
@@ -22,6 +22,8 @@ export function Reader({ book, onBack }: { book: Book; onBack: () => void }) {
   const [showToolbar, setShowToolbar] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [showHlDrawer, setShowHlDrawer] = useState(false);
+  const [showTocDrawer, setShowTocDrawer] = useState(false);
+  const [currentChapterLabel, setCurrentChapterLabel] = useState<string>('');
   const [originalPage, setOriginalPage] = useState<number | null>(null);
 
   const [highlights, setHighlights] = useState<Highlight[]>([]);
@@ -56,7 +58,11 @@ export function Reader({ book, onBack }: { book: Book; onBack: () => void }) {
       const posStr = localStorage.getItem(`pos_${book.id}`);
       if (posStr) {
         try {
-          const { blockId, fraction } = JSON.parse(posStr);
+          const posObj = JSON.parse(posStr);
+          if (posObj.chapterLabel) {
+            setCurrentChapterLabel(posObj.chapterLabel);
+          }
+          const { blockId, fraction } = posObj;
           const el = container.querySelector(`[data-block-id="${blockId}"]`) as HTMLElement;
           if (el) {
             const top = el.getBoundingClientRect().top + window.scrollY;
@@ -71,7 +77,9 @@ export function Reader({ book, onBack }: { book: Book; onBack: () => void }) {
     let scrollTid: ReturnType<typeof setTimeout>;
     const onScroll = () => {
       clearTimeout(scrollTid);
-      scrollTid = setTimeout(() => saveReadPosition(container, book), 600);
+      scrollTid = setTimeout(() => {
+        saveReadPosition(container, book, (lbl) => setCurrentChapterLabel(lbl));
+      }, 600);
     };
     window.addEventListener('scroll', onScroll, { passive: true });
 
@@ -170,9 +178,18 @@ export function Reader({ book, onBack }: { book: Book; onBack: () => void }) {
   function exportMarkdown() {
     let md = `# Kutipan — ${book.title}\n\n`;
     [...highlights].sort((a, b) => a.createdAt - b.createdAt).forEach(hl => {
-      md += `> ${hl.text}\n`;
-      if (hl.note) md += `\n**Catatan:** ${hl.note}\n`;
-      md += `\n---\n\n`;
+      const ci = parseInt(hl.groupSegments[0]?.blockId.split('-')[0] || '0', 10);
+      const ch = book.chapters[ci];
+      const chLabel = ch ? (ch.label ? `${ch.label}${ch.title ? ' — ' + ch.title : ''}` : ch.title || '') : '';
+
+      md += `> ${hl.text}\n\n`;
+      if (chLabel) {
+        md += `— ${chLabel}\n\n`;
+      }
+      if (hl.note) {
+        md += `**Catatan:** ${hl.note}\n\n`;
+      }
+      md += `---\n\n`;
     });
     const blob = new Blob([md], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
@@ -190,10 +207,13 @@ export function Reader({ book, onBack }: { book: Book; onBack: () => void }) {
       {/* Toolbar atas */}
       <div class={`reader-toolbar${showToolbar ? '' : ' hidden'}`} onClick={e => e.stopPropagation()}>
         <button class="btn btn-sm" onClick={onBack}>← Kembali</button>
-        <span class="toolbar-title">{book.title}</span>
+        <span class="toolbar-title" title={currentChapterLabel ? `${currentChapterLabel} — ${book.title}` : book.title}>
+          {currentChapterLabel || book.title}
+        </span>
         <div class="toolbar-actions">
-          <button class="btn btn-sm" onClick={() => { setShowHlDrawer(true); setShowSettings(false); }}>Penanda</button>
-          <button class="btn btn-sm" onClick={() => { setShowSettings(v => !v); setShowHlDrawer(false); }}>Aa</button>
+          <button class="btn btn-sm" onClick={() => { setShowTocDrawer(true); setShowHlDrawer(false); setShowSettings(false); }}>Daftar Isi</button>
+          <button class="btn btn-sm" onClick={() => { setShowHlDrawer(true); setShowTocDrawer(false); setShowSettings(false); }}>Penanda</button>
+          <button class="btn btn-sm" onClick={() => { setShowSettings(v => !v); setShowHlDrawer(false); setShowTocDrawer(false); }}>Aa</button>
         </div>
       </div>
 
@@ -201,8 +221,8 @@ export function Reader({ book, onBack }: { book: Book; onBack: () => void }) {
       <div class="reader-content" ref={contentRef} />
 
       {/* Overlay untuk menutup panel */}
-      {(showSettings || showHlDrawer) && (
-        <div class="overlay-backdrop" onClick={() => { setShowSettings(false); setShowHlDrawer(false); }} />
+      {(showSettings || showHlDrawer || showTocDrawer) && (
+        <div class="overlay-backdrop" onClick={() => { setShowSettings(false); setShowHlDrawer(false); setShowTocDrawer(false); }} />
       )}
 
       {/* Panel pengaturan */}
@@ -210,10 +230,27 @@ export function Reader({ book, onBack }: { book: Book; onBack: () => void }) {
         <SettingsPanel onClose={() => setShowSettings(false)} />
       )}
 
+      {/* Drawer Daftar Isi */}
+      {showTocDrawer && (
+        <TocDrawer
+          chapters={book.chapters}
+          onClose={() => setShowTocDrawer(false)}
+          onSelectChapter={(chapId) => {
+            setShowTocDrawer(false);
+            const el = document.getElementById(`chap-${chapId}`);
+            if (el) {
+              const top = el.getBoundingClientRect().top + window.scrollY - 60;
+              window.scrollTo({ top, behavior: 'smooth' });
+            }
+          }}
+        />
+      )}
+
       {/* Drawer highlight */}
       {showHlDrawer && (
         <HighlightsDrawer
           highlights={highlights}
+          book={book}
           contentRef={contentRef}
           onClose={() => setShowHlDrawer(false)}
           onExportMd={exportMarkdown}
@@ -340,7 +377,11 @@ function createBlockEl(bookId: string, block: Block): HTMLElement {
   return el;
 }
 
-function saveReadPosition(container: HTMLElement, book: Book) {
+function saveReadPosition(
+  container: HTMLElement,
+  book: Book,
+  onChapterChange?: (label: string) => void
+) {
   const blocks = container.querySelectorAll('.book-block');
   const viewTop = window.scrollY;
   const viewH = window.innerHeight;
@@ -362,7 +403,19 @@ function saveReadPosition(container: HTMLElement, book: Book) {
         }
       }
       const percent = total > 0 ? Math.round((idx / total) * 100) : 0;
-      localStorage.setItem(`pos_${book.id}`, JSON.stringify({ blockId, fraction, percent }));
+      const ci = parseInt(blockId?.split('-')[0] || '0', 10);
+      const curChapter = book.chapters[ci];
+      const chapterLabel = curChapter
+        ? curChapter.label
+          ? `${curChapter.label}${curChapter.title ? ' · ' + curChapter.title : ''}`
+          : curChapter.title || (curChapter.kind === 'prologue' ? 'Prolog' : '')
+        : '';
+
+      localStorage.setItem(
+        `pos_${book.id}`,
+        JSON.stringify({ blockId, fraction, percent, chapterLabel })
+      );
+      if (onChapterChange) onChapterChange(chapterLabel);
       break;
     }
   }
@@ -480,9 +533,10 @@ function SettingsPanel({ onClose }: { onClose: () => void }) {
 // ─── Komponen: Drawer Highlights ───
 
 function HighlightsDrawer({
-  highlights, contentRef, onClose, onExportMd, onSaveNote, onDelete
+  highlights, book, contentRef, onClose, onExportMd, onSaveNote, onDelete
 }: {
   highlights: Highlight[];
+  book: Book;
   contentRef: { current: HTMLDivElement | null };
   onClose: () => void;
   onExportMd: () => void;
@@ -525,37 +579,101 @@ function HighlightsDrawer({
             <p>Belum ada penanda.</p>
             <p>Pilih teks saat membaca untuk menandainya.</p>
           </div>
-        ) : sorted.map(hl => (
-          <div class="hl-card" key={hl.id} onClick={() => jumpTo(hl)}>
-            <div class="hl-card-meta">
-              <div class="hl-color-dot" style={{ background: COLOR_HEX[hl.color as HlColor] || '#ccc' }} />
-              <span class="hl-date">{new Date(hl.createdAt).toLocaleDateString('id-ID')}</span>
-            </div>
-            <div class="hl-card-text">"{hl.text}"</div>
-            {hl.note && editNoteId !== hl.id && (
-              <div class="hl-card-note">📝 {hl.note}</div>
-            )}
-            {editNoteId === hl.id && (
-              <div style={{ display: 'flex', gap: 6, marginTop: 6 }} onClick={e => e.stopPropagation()}>
-                <input
-                  type="text"
-                  value={noteText}
-                  onInput={e => setNoteText((e.target as HTMLInputElement).value)}
-                  placeholder="Tulis catatan..."
-                  style={{ flex: 1, padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border-color)', background: 'var(--bg-color)', color: 'var(--text-color)', fontSize: '0.85rem', fontFamily: 'inherit' }}
-                  onKeyDown={e => { if (e.key === 'Enter') { onSaveNote(hl.id, noteText); setEditNoteId(null); } }}
-                />
-                <button class="btn btn-sm btn-primary" onClick={() => { onSaveNote(hl.id, noteText); setEditNoteId(null); }}>Simpan</button>
+        ) : sorted.map(hl => {
+          const ci = parseInt(hl.groupSegments[0]?.blockId.split('-')[0] || '0', 10);
+          const ch = book.chapters[ci];
+          const chLabel = ch ? (ch.label ? `${ch.label}${ch.title ? ' · ' + ch.title : ''}` : ch.title || '') : '';
+
+          return (
+            <div class="hl-card" key={hl.id} onClick={() => jumpTo(hl)}>
+              <div class="hl-card-meta">
+                <div class="hl-color-dot" style={{ background: COLOR_HEX[hl.color as HlColor] || '#ccc' }} />
+                {chLabel && (
+                  <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--secondary-text)' }}>
+                    {chLabel}
+                  </span>
+                )}
+                <span class="hl-date" style={{ marginLeft: 'auto' }}>
+                  {new Date(hl.createdAt).toLocaleDateString('id-ID')}
+                </span>
               </div>
-            )}
-            <div style={{ display: 'flex', gap: 6, marginTop: 8 }} onClick={e => e.stopPropagation()}>
-              <button class="btn btn-sm" onClick={() => { setEditNoteId(hl.id); setNoteText(hl.note || ''); }}>
-                {hl.note ? '✏️ Edit catatan' : '📝 Tambah catatan'}
-              </button>
-              <button class="btn btn-sm btn-danger" onClick={() => onDelete(hl.id)}>Hapus</button>
+              <div class="hl-card-text">"{hl.text}"</div>
+              {hl.note && editNoteId !== hl.id && (
+                <div class="hl-card-note">📝 {hl.note}</div>
+              )}
+              {editNoteId === hl.id && (
+                <div style={{ display: 'flex', gap: 6, marginTop: 6 }} onClick={e => e.stopPropagation()}>
+                  <input
+                    type="text"
+                    value={noteText}
+                    onInput={e => setNoteText((e.target as HTMLInputElement).value)}
+                    placeholder="Tulis catatan..."
+                    style={{ flex: 1, padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border-color)', background: 'var(--bg-color)', color: 'var(--text-color)', fontSize: '0.85rem', fontFamily: 'inherit' }}
+                    onKeyDown={e => { if (e.key === 'Enter') { onSaveNote(hl.id, noteText); setEditNoteId(null); } }}
+                  />
+                  <button class="btn btn-sm btn-primary" onClick={() => { onSaveNote(hl.id, noteText); setEditNoteId(null); }}>Simpan</button>
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 6, marginTop: 8 }} onClick={e => e.stopPropagation()}>
+                <button class="btn btn-sm" onClick={() => { setEditNoteId(hl.id); setNoteText(hl.note || ''); }}>
+                  {hl.note ? '✏️ Edit catatan' : '📝 Tambah catatan'}
+                </button>
+                <button class="btn btn-sm btn-danger" onClick={() => onDelete(hl.id)}>Hapus</button>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Komponen: Drawer Daftar Isi ───
+
+function TocDrawer({
+  chapters,
+  onClose,
+  onSelectChapter,
+}: {
+  chapters: Chapter[];
+  onClose: () => void;
+  onSelectChapter: (chapterId: string) => void;
+}) {
+  return (
+    <div class="hl-drawer" onClick={(e) => e.stopPropagation()}>
+      <div class="hl-drawer-header">
+        <span style={{ fontWeight: 600 }}>Daftar Isi</span>
+        <button class="btn btn-sm btn-icon" style={{ border: 'none' }} onClick={onClose}>✕</button>
+      </div>
+      <div class="hl-drawer-body">
+        {chapters.map((ch) => {
+          const displayLabel = ch.label || '';
+          const displayTitle = ch.title || (ch.kind === 'prologue' ? 'Prolog' : '');
+          return (
+            <div
+              key={ch.id}
+              class="hl-card"
+              onClick={() => onSelectChapter(ch.id)}
+              style={{ cursor: 'pointer' }}
+            >
+              {displayLabel && (
+                <div style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--secondary-text)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  {displayLabel}
+                </div>
+              )}
+              {displayTitle && (
+                <div style={{ fontSize: '0.95rem', fontWeight: 500, marginTop: displayLabel ? 2 : 0 }}>
+                  {displayTitle}
+                </div>
+              )}
+              {ch.subtitle && (
+                <div style={{ fontSize: '0.8rem', color: 'var(--secondary-text)', marginTop: 2, fontStyle: 'italic' }}>
+                  {ch.subtitle}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

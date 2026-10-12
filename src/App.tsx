@@ -4,6 +4,8 @@ import { getAllBooks, saveBook, saveBlob, getDB, getBlob } from './lib/db';
 import { Reader } from './components/Reader';
 import ParserWorker from './worker/parser.worker?worker';
 import type { ParserMessage } from './worker/parser';
+import { parsePdf } from './worker/parser';
+import { PARSER_VERSION } from './worker/parser-constants';
 
 export function App() {
   const [books, setBooks] = useState<Book[]>([]);
@@ -20,6 +22,43 @@ export function App() {
     setLoading(true);
     try {
       const bks = await getAllBooks();
+
+      // Migrasi: jika parserVersion berbeda, hitung ulang buku dari salinan PDF yang tersimpan
+      for (let i = 0; i < bks.length; i++) {
+        const b = bks[i];
+        if (b.parserVersion !== PARSER_VERSION) {
+          const pdfBlob = await getBlob(`pdf_${b.id}`);
+          if (pdfBlob) {
+            try {
+              const buffer = await pdfBlob.arrayBuffer();
+              const { book: reParsed } = await parsePdf(buffer, b.title, b.author);
+              reParsed.id = b.id; // Pertahankan ID agar blockId dan highlight tetap menempel
+              await saveBook(reParsed);
+              bks[i] = reParsed;
+            } catch (err) {
+              console.warn('Gagal re-parse buku saat migrasi:', b.title, err);
+              // Fallback migrasi label in-place
+              b.chapters.forEach((c) => {
+                if (/^BAB\s*\d+$/i.test(c.label)) {
+                  c.label = c.label.replace(/^BAB\s*/i, 'CHAPTER ');
+                }
+              });
+              b.parserVersion = PARSER_VERSION;
+              await saveBook(b);
+            }
+          } else {
+            // Update label in-place jika PDF blob tidak tersedia
+            b.chapters.forEach((c) => {
+              if (/^BAB\s*\d+$/i.test(c.label)) {
+                c.label = c.label.replace(/^BAB\s*/i, 'CHAPTER ');
+              }
+            });
+            b.parserVersion = PARSER_VERSION;
+            await saveBook(b);
+          }
+        }
+      }
+
       setBooks(bks);
       const newCovers: Record<string, string> = {};
       for (const b of bks) {
@@ -281,7 +320,14 @@ export function App() {
             {books.map(b => {
               const posRaw = localStorage.getItem(`pos_${b.id}`);
               let pctRead = 0;
-              if (posRaw) { try { pctRead = JSON.parse(posRaw).percent || 0; } catch {} }
+              let chLabel = '';
+              if (posRaw) {
+                try {
+                  const pos = JSON.parse(posRaw);
+                  pctRead = pos.percent || 0;
+                  chLabel = pos.chapterLabel || '';
+                } catch {}
+              }
               return (
                 <div class="book-card" key={b.id} onClick={() => setActiveBook(b)}>
                   <div
@@ -295,7 +341,9 @@ export function App() {
                   </div>
                   <div class="book-info">
                     <h3>{b.title}</h3>
-                    <div class="book-meta">{b.pageCount} halaman</div>
+                    <div class="book-meta">
+                      {b.pageCount} halaman{chLabel ? ` • ${chLabel}` : ''}
+                    </div>
                     {posRaw && (
                       <span class="progress-pill">{pctRead}% dibaca</span>
                     )}
