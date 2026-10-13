@@ -379,7 +379,7 @@ export function App() {
       const url = URL.createObjectURL(zipBlob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `pembaca-nyaman-backup-${Date.now()}.zip`;
+      a.download = `ebookly-backup-${Date.now()}.zip`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 10000);
       setShowExportModal(false);

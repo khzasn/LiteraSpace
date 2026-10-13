@@ -1,4 +1,4 @@
-# 📚 Ebookly (Pembaca Nyaman)
+# 📚 Ebookly
 
 **Ebookly** adalah aplikasi web progresif (*Progressive Web App* / PWA) pembaca e-book PDF yang mengubah dokumen PDF berisi teks menjadi tampilan baca yang nyaman layaknya buku fisik—lengkap dengan pilihan tema warna (*Light, Sepia, Warm, Dark*), penyesuaian tipografi, daftar isi otomatis, penanda (*highlight*) multi-warna beserta catatan, ekstraksi ilustrasi, dan penyimpanan 100% lokal di perangkat Anda.
 
@@ -10,7 +10,7 @@ Aplikasi ini dirancang sebagai **PWA** sehingga dapat dipasang ke layar utama (*
 
 ### Android (Google Chrome / Microsoft Edge)
 1. Buka alamat aplikasi di **Google Chrome** pada HP Android Anda:  
-   `https://<username-github>.github.io/pembaca-nyaman/`
+   `https://khzasn.github.io/ebookly/`
 2. Pada halaman Perpustakaan, ketuk tombol **"Tambahkan ke layar utama"** pada kotak petunjuk di bagian atas, **ATAU**:
 3. Ketuk ikon menu **⋮ (tiga titik)** di pojok kanan atas Chrome → pilih **"Tambahkan ke layar utama"** (*Add to Home screen*) atau **"Instal aplikasi"** (*Install app*).
 4. Konfirmasi dengan mengetuk **Instal / Tambah**. Ikon **Ebookly** akan muncul di daftar aplikasi HP Anda.

@@ -68,7 +68,7 @@ self.onmessage = async (e: MessageEvent<{ buffer: ArrayBuffer; title: string; au
     if (wordCount < 50) {
       self.postMessage({
         type: 'error',
-        message: `PDF ini sepertinya hasil scan atau berisi gambar saja (hanya ${wordCount} kata terdeteksi). "Pembaca Nyaman" hanya mendukung PDF berbasis teks.`,
+        message: `PDF ini sepertinya hasil scan atau berisi gambar saja (hanya ${wordCount} kata terdeteksi). "Ebookly" hanya mendukung PDF berbasis teks.`,
       } satisfies ParserMessage);
       return;
     }

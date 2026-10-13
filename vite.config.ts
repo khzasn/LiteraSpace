@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 
 export default defineConfig({
   // Sesuaikan base dengan nama repo GitHub Pages
-  base: '/pembaca-nyaman/',
+  base: '/ebookly/',
 
   plugins: [
     preact(),
@@ -14,14 +14,14 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg', 'favicon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png'],
       manifest: {
-        name: 'Ebookly — Pembaca Nyaman',
+        name: 'Ebookly',
         short_name: 'Ebookly',
         description: 'Baca ebook PDF dengan tampilan nyaman seperti buku fisik, langsung di browser dan bekerja offline.',
         theme_color: '#f4ecd8',
         background_color: '#f4ecd8',
         display: 'standalone',
-        start_url: '/pembaca-nyaman/',
-        scope: '/pembaca-nyaman/',
+        start_url: '/ebookly/',
+        scope: '/ebookly/',
         lang: 'id',
         icons: [
           {
