@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import type { Book, Block, Highlight, HighlightSegment, Chapter } from '../types/book';
+import type { Book, Highlight, HighlightSegment, Chapter } from '../types/book';
 import { getBlob, getHighlightsByBook, saveHighlight, deleteHighlight } from '../lib/db';
-import { imageBlobKey, pdfBlobKey } from '../lib/keys';
-import { createBlockEl, showImagePlaceholder } from '../lib/blocks';
+import { pdfBlobKey } from '../lib/keys';
+import { createBlockEl } from '../lib/blocks';
 import { settings } from '../lib/settings';
 import { getSelectionSegments, renderHighlights } from '../lib/highlighter';
 import * as pdfjs from 'pdfjs-dist';

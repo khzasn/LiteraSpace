@@ -3,11 +3,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const fixturePdfPath = path.resolve(__dirname, '../fixtures/book.pdf');
+const fixturePdfPath = path.resolve(__dirname, '../fixtures/gutenberg.pdf');
 const screenshotBab1Path = path.resolve(__dirname, 'bab1-images.png');
 
 test.describe('E2E: Gambar di Reader dan Backup/Restore .zip & .json (Viewport 390x844)', () => {
-  test('Unggah book.pdf -> 27 gambar + sampul + pdf -> Reader naturalWidth > 0 -> Backup .zip -> Clear DB -> Impor .zip -> Impor .json lama', async ({ page }) => {
+  test('Unggah gutenberg.pdf -> 4 gambar + sampul + pdf -> Reader naturalWidth > 0 -> Backup .zip -> Clear DB -> Impor .zip -> Impor .json lama', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/pembaca-nyaman/');
 
@@ -23,15 +23,15 @@ test.describe('E2E: Gambar di Reader dan Backup/Restore .zip & .json (Viewport 3
     });
     await page.reload();
 
-    // 1. Unggah tests/fixtures/book.pdf
-    const fileInput = page.locator('label.upload-zone input[type="file"]');
+    // 1. Unggah tests/fixtures/gutenberg.pdf
+    const fileInput = page.locator('label.upload-dropzone input[type="file"]');
     await fileInput.setInputFiles(fixturePdfPath);
 
     // Tunggu sampai kartu buku muncul
     const bookCard = page.locator('.book-card').first();
     await expect(bookCard).toBeVisible({ timeout: 90000 });
 
-    // Verifikasi store `blobs` berisi 27 gambar + sampul + pdf (total 29 item)
+    // Verifikasi store `blobs` berisi 4 gambar + sampul + pdf (total 6 item)
     const blobCounts = await page.evaluate(async () => {
       const dbReq = indexedDB.open('pembaca-nyaman', 2);
       const db: IDBDatabase = await new Promise((resolve, reject) => {
@@ -54,27 +54,27 @@ test.describe('E2E: Gambar di Reader dan Backup/Restore .zip & .json (Viewport 3
       };
     });
 
-    expect(blobCounts.imgCount).toBe(27);
+    expect(blobCounts.imgCount).toBe(4);
     expect(blobCounts.coverCount).toBe(1);
     expect(blobCounts.pdfCount).toBe(1);
-    expect(blobCounts.total).toBe(29);
+    expect(blobCounts.total).toBe(6);
 
     // Pastikan sampul muncul di library
-    const coverStyle = await page.locator('.book-cover').first().getAttribute('style');
+    const coverStyle = await page.locator('.book-cover-inner').first().getAttribute('style');
     expect(coverStyle).toContain('blob:');
 
     // 2. Masuk ke Reader
     await bookCard.click();
     await expect(page.locator('.reader-content')).toBeVisible();
 
-    // Tunggu semua 27 <img.book-img> memiliki src blob: dan selesai dimuat (naturalWidth > 0)
+    // Tunggu semua 4 <img.book-img> memiliki src blob: dan selesai dimuat (naturalWidth > 0)
     await expect.poll(async () => {
       return await page.evaluate(() => {
         const imgs = Array.from(document.querySelectorAll('img.book-img')) as HTMLImageElement[];
-        if (imgs.length !== 27) return -1;
+        if (imgs.length !== 4) return -1;
         return imgs.filter(img => img.complete && img.naturalWidth > 0).length;
       });
-    }, { timeout: 30000 }).toBe(27);
+    }, { timeout: 30000 }).toBe(4);
 
     // Buat highlight dan simpan posisi baca di CHAPTER 1
     // Scroll ke awal CHAPTER 1 tempat judul bab dan gambar pembuka berada
@@ -169,12 +169,12 @@ test.describe('E2E: Gambar di Reader dan Backup/Restore .zip & .json (Viewport 3
 
     // Pastikan buku kembali muncul beserta sampul dan progres baca
     await expect(page.locator('.book-card').first()).toBeVisible({ timeout: 30000 });
-    const restoredCoverStyle = await page.locator('.book-cover').first().getAttribute('style');
+    const restoredCoverStyle = await page.locator('.book-cover-inner').first().getAttribute('style');
     expect(restoredCoverStyle).toContain('blob:');
-    await expect(page.locator('.progress-pill')).toBeVisible();
+    await expect(page.locator('.book-progress-wrapper')).toBeVisible();
 
     // Buka kembali Reader dan verifikasi:
-    // - 27 gambar tetap termuat (naturalWidth > 0)
+    // - 4 gambar tetap termuat (naturalWidth > 0)
     // - highlight tetap ada
     // - tombol "Lihat halaman asli" berfungsi
     await page.locator('.book-card').first().click();
@@ -183,10 +183,10 @@ test.describe('E2E: Gambar di Reader dan Backup/Restore .zip & .json (Viewport 3
     await expect.poll(async () => {
       return await page.evaluate(() => {
         const imgs = Array.from(document.querySelectorAll('img.book-img')) as HTMLImageElement[];
-        if (imgs.length !== 27) return -1;
+        if (imgs.length !== 4) return -1;
         return imgs.filter(img => img.complete && img.naturalWidth > 0).length;
       });
-    }, { timeout: 30000 }).toBe(27);
+    }, { timeout: 30000 }).toBe(4);
 
     await expect(page.locator('mark[data-hl]')).toHaveCount(1);
 

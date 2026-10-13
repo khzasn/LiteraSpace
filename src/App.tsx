@@ -4,7 +4,6 @@ import { getAllBooks, saveBook, saveBlob, getDB, getBlob } from './lib/db';
 import { Reader } from './components/Reader';
 import ParserWorker from './worker/parser.worker?worker';
 import type { ParserMessage } from './worker/parser';
-import { parsePdf } from './worker/parser';
 import { PARSER_VERSION } from './worker/parser-constants';
 import { coverBlobKey, pdfBlobKey } from './lib/keys';
 import { createZipBackup, parseBackupFile } from './lib/backup';
@@ -56,7 +55,83 @@ export function App() {
   const [exportSizes, setExportSizes] = useState({ baseSize: 0, pdfSize: 0 });
   const [exporting, setExporting] = useState(false);
 
-  useEffect(() => { loadLibrary(); }, []);
+  // Status penyimpanan (usage / quota / persist)
+  const [storageInfo, setStorageInfo] = useState<{
+    usage: number;
+    quota: number;
+    persisted: boolean | null;
+    persistDenied: boolean;
+  } | null>(null);
+
+  // PWA Install Prompt & Standalone detection
+  const [isStandalone, setIsStandalone] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [dismissInstallHint, setDismissInstallHint] = useState(() => {
+    try { return sessionStorage.getItem('ebookly-dismiss-install') === '1'; } catch { return false; }
+  });
+
+  useEffect(() => {
+    loadLibrary();
+
+    const checkStandalone = () => {
+      const standalone =
+        window.matchMedia?.('(display-mode: standalone)').matches ||
+        (window.navigator as any).standalone === true;
+      setIsStandalone(!!standalone);
+    };
+    checkStandalone();
+
+    const onBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    const onAppInstalled = () => {
+      setIsStandalone(true);
+      setDeferredPrompt(null);
+    };
+
+    window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt);
+    window.addEventListener('appinstalled', onAppInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', onAppInstalled);
+    };
+  }, []);
+
+  async function updateStorageInfo(requestPersist = false) {
+    if (typeof navigator === 'undefined' || !navigator.storage) return;
+    try {
+      let persisted = navigator.storage.persisted ? await navigator.storage.persisted() : null;
+      let persistDenied = false;
+      if (requestPersist && navigator.storage.persist) {
+        const granted = await navigator.storage.persist();
+        persisted = granted;
+        if (!granted) {
+          persistDenied = true;
+        }
+      }
+      const est = navigator.storage.estimate ? await navigator.storage.estimate() : { usage: 0, quota: 0 };
+      setStorageInfo(prev => ({
+        usage: est.usage || 0,
+        quota: est.quota || 0,
+        persisted,
+        persistDenied: persistDenied || (prev?.persistDenied ?? false),
+      }));
+    } catch (e) {
+      console.warn('Gagal memeriksa status penyimpanan:', e);
+    }
+  }
+
+  async function handleInstallClick() {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    try {
+      const choice = await deferredPrompt.userChoice;
+      if (choice?.outcome === 'accepted') {
+        setDeferredPrompt(null);
+      }
+    } catch {}
+  }
 
   async function loadLibrary() {
     setLoading(true);
@@ -111,6 +186,7 @@ export function App() {
         if (blob) newCovers[b.id] = URL.createObjectURL(blob);
       }
       setCovers(newCovers);
+      await updateStorageInfo(false);
     } catch (e) {
       console.error('Gagal memuat perpustakaan:', e);
     } finally {
@@ -186,6 +262,7 @@ export function App() {
           }
 
           await saveBook(msg.book);
+          await updateStorageInfo(true);
           worker.terminate();
           setUploading(false);
           setProgress(null);
@@ -350,6 +427,7 @@ export function App() {
         await tx.done;
       }
 
+      await updateStorageInfo(true);
       if (warning) {
         setUploadWarning(warning);
       }
@@ -433,6 +511,44 @@ export function App() {
       </div>
 
       <div class="library-body">
+        {/* Petunjuk Pasang PWA (Tambahkan ke layar utama) — hanya jika belum standalone */}
+        {!isStandalone && !dismissInstallHint && (
+          <div class="install-hint-banner">
+            <div class="install-hint-content">
+              <div class="install-hint-title">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="5" y="2" width="14" height="20" rx="2" ry="2" />
+                  <line x1="12" y1="18" x2="12.01" y2="18" />
+                </svg>
+                <strong>Tambahkan ke layar utama</strong>
+                <span class="install-badge-offline">Siap Offline</span>
+              </div>
+              <p class="install-hint-desc">
+                {deferredPrompt
+                  ? 'Pasang Ebookly di layar utama HP/perangkat Anda agar dapat dibuka layar penuh dan tetap berfungsi tanpa koneksi internet.'
+                  : 'Android (Chrome): ketuk menu ⋮ → "Tambahkan ke layar utama". iOS (Safari): ketuk tombol Bagikan → "Tambah ke Layar Utama".'}
+              </p>
+            </div>
+            <div class="install-hint-actions">
+              {deferredPrompt && (
+                <button class="btn-install-pwa" onClick={handleInstallClick}>
+                  Tambahkan ke layar utama
+                </button>
+              )}
+              <button
+                class="btn-dismiss-install"
+                aria-label="Tutup petunjuk pasang"
+                onClick={() => {
+                  setDismissInstallHint(true);
+                  try { sessionStorage.setItem('ebookly-dismiss-install', '1'); } catch {}
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Error banner */}
         {uploadError && (
           <div class="error-banner">
@@ -446,6 +562,15 @@ export function App() {
           <div class="warning-banner">
             <span>ℹ️ {uploadWarning}</span>
             <button onClick={() => setUploadWarning(null)} style={{ marginLeft: 10, background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}>✕</button>
+          </div>
+        )}
+
+        {/* Peringatan jika navigator.storage.persist() ditolak */}
+        {storageInfo?.persistDenied && (
+          <div class="warning-banner storage-persist-warning">
+            <span>
+              ⚠️ <strong>Penyimpanan permanen tidak diizinkan browser.</strong> Data buku berisiko dibersihkan otomatis oleh sistem jika ruang penyimpanan perangkat hampir penuh. Gunakan tombol <strong>Ekspor</strong> secara berkala untuk menyimpan cadangan.
+            </span>
           </div>
         )}
 
@@ -493,11 +618,23 @@ export function App() {
           </label>
         )}
 
-        {/* Bagian Koleksi (Gallery) */}
+        {/* Bagian Koleksi (Gallery) + Status Penyimpanan */}
         <section class="collection-section">
-          <h2 class="collection-heading">
-            Koleksi Anda <span class="collection-count">({books.length} {books.length === 1 ? 'buku' : 'buku'})</span>
-          </h2>
+          <div class="collection-header-row">
+            <h2 class="collection-heading">
+              Koleksi Anda <span class="collection-count">({books.length} {books.length === 1 ? 'buku' : 'buku'})</span>
+            </h2>
+            {storageInfo && storageInfo.quota > 0 && (
+              <div class="storage-status-pill" title="Status penyimpanan lokal browser (IndexedDB)">
+                <span>Penyimpanan: {formatBytes(storageInfo.usage)} / {formatBytes(storageInfo.quota)}</span>
+                {storageInfo.persisted !== null && (
+                  <span class={`storage-persist-badge ${storageInfo.persisted ? 'is-persisted' : 'is-volatile'}`}>
+                    {storageInfo.persisted ? 'Persisten ✓' : 'Sementara'}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
 
           {books.length === 0 ? (
             <div class="empty-state">

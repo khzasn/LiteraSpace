@@ -17,22 +17,18 @@ import * as pdfjsLib from 'pdfjs-dist';
 import { parsePdf, countWords } from '../src/worker/parser';
 import type { Book } from '../src/types/book';
 
-// Jumlah kata yang diketahui dari prototipe untuk PDF E-Book Thinking again BAB 1 (ver.indo).pdf
-const GOLDEN_WORD_COUNT = 21643;
+// Jumlah kata dari PDF domain publik Project Gutenberg (Alice's Adventures in Wonderland)
+const GOLDEN_WORD_COUNT = 1134;
 
-const PDF_PATH = join(__dirname, 'fixtures', 'book.pdf');
-const PDF_ALT_PATH = join(
-  __dirname,
-  '..',
-  'E-Book Thinking again BAB 1 (ver.indo).pdf'
-);
+const PDF_PATH = join(__dirname, 'fixtures', 'gutenberg.pdf');
+const PDF_ALT_PATH = join(__dirname, 'fixtures', 'book.pdf');
 
 describe('Parser Golden Test', () => {
   let parsedBook: Book;
   let pdfAvailable = false;
 
   beforeAll(async () => {
-    // Cari PDF: dari fixtures/ dulu, fallback ke root workspace
+    // Cari PDF: dari fixtures/gutenberg.pdf dulu
     const path = existsSync(PDF_PATH)
       ? PDF_PATH
       : existsSync(PDF_ALT_PATH)

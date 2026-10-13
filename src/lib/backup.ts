@@ -89,7 +89,7 @@ export async function parseBackupFile(fileOrBlob: Blob): Promise<ParseBackupResu
         } else if (rawKey.startsWith('pdf_')) {
           mimeType = 'application/pdf';
         }
-        blobs[rawKey] = new Blob([data], { type: mimeType });
+        blobs[rawKey] = new Blob([data as unknown as BlobPart], { type: mimeType });
       }
     }
 

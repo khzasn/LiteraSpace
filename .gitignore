@@ -24,3 +24,9 @@ dist-ssr
 *.sw?
 test-results/
 playwright-report/
+
+# Copyrighted reference PDFs (excluded from repository)
+tests/fixtures/book.pdf
+E-Book*.pdf
+project-src.zip
+

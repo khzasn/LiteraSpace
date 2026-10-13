@@ -56,7 +56,13 @@ import type {
 // ---- Pesan ke main thread ----
 export type ParserMessage =
   | { type: 'progress'; page: number; total: number; message?: string }
-  | { type: 'done'; book: Book; imgJobs: ImgJob[]; blobs?: Record<string, Blob> }
+  | {
+      type: 'done';
+      book: Book;
+      imgJobs: ImgJob[];
+      blobs?: Record<string, Blob>;
+      imgStats?: { total: number; success: number; failed: number };
+    }
   | { type: 'error'; message: string };
 
 /** Pekerjaan crop gambar yang harus diselesaikan setelah parsing */
