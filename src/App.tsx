@@ -380,33 +380,57 @@ export function App() {
 
   return (
     <div class="library-page">
-      {/* Header */}
-      <header class="library-header">
-        <h1>📚 Pembaca Nyaman</h1>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <div class="theme-picker" role="group" aria-label="Pilih tema">
-            {(['light', 'sepia', 'warm', 'dark'] as Theme[]).map(t => {
-              const labels: Record<Theme, string> = { light: 'Terang', sepia: 'Sepia', warm: 'Hangat', dark: 'Gelap' };
-              return (
-                <button
-                  key={t}
-                  class="theme-swatch"
-                  data-theme-val={t}
-                  aria-label={labels[t]}
-                  aria-pressed={settings.value.theme === t}
-                  onClick={() => settings.value = { ...settings.value, theme: t }}
-                />
-              );
-            })}
+      {/* Header & Navigasi */}
+      <div class="library-header-wrapper">
+        <header class="library-header">
+          <div class="brand-group">
+            <svg class="brand-logo-svg" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <rect x="3" y="9" width="18" height="20" rx="3.5" fill="#6366f1" />
+              <rect x="7" y="5.5" width="18" height="20" rx="3.5" fill="#10b981" />
+              <rect x="11" y="2" width="18" height="20" rx="3.5" fill="#f43f5e" />
+              <rect x="14.5" y="6" width="11" height="2" rx="1" fill="#ffffff" fill-opacity="0.8" />
+              <rect x="14.5" y="10" width="7" height="2" rx="1" fill="#ffffff" fill-opacity="0.8" />
+            </svg>
+            <h1 class="brand-title">Pembaca Nyaman</h1>
           </div>
-          <label class="btn btn-sm" style={{ cursor: 'pointer' }}>
-            Impor
-            <input type="file" accept=".zip,.json,application/zip,application/json" style={{ display: 'none' }} onChange={importBackup} />
-          </label>
-          <button class="btn btn-sm" onClick={openExportModal}>Ekspor</button>
-        </div>
-      </header>
 
+          <div class="header-controls">
+            {/* Theme Selector */}
+            <div class="theme-picker" role="group" aria-label="Pilih tema">
+              {(['light', 'sepia', 'warm', 'dark'] as Theme[]).map(t => {
+                const labels: Record<Theme, string> = { light: 'Terang', sepia: 'Sepia', warm: 'Hangat', dark: 'Gelap' };
+                return (
+                  <button
+                    key={t}
+                    class="theme-swatch"
+                    data-theme-val={t}
+                    aria-label={labels[t]}
+                    aria-pressed={settings.value.theme === t}
+                    onClick={() => settings.value = { ...settings.value, theme: t }}
+                  />
+                );
+              })}
+            </div>
+
+            {/* Tombol Impor & Ekspor Outline */}
+            <div class="header-actions">
+              <label class="btn-outline" style={{ cursor: 'pointer' }}>
+                <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M3 13v3a2 2 0 002 2h10a2 2 0 002-2v-3M10 3v10m-4-4l4 4 4-4" />
+                </svg>
+                <span>Impor</span>
+                <input type="file" accept=".zip,.json,application/zip,application/json" style={{ display: 'none' }} onChange={importBackup} />
+              </label>
+              <button class="btn-outline" onClick={openExportModal}>
+                <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M3 13v3a2 2 0 002 2h10a2 2 0 002-2v-3M10 13V3m-4 4l4-4 4 4" />
+                </svg>
+                <span>Ekspor</span>
+              </button>
+            </div>
+          </div>
+        </header>
+      </div>
 
       <div class="library-body">
         {/* Error banner */}
@@ -425,7 +449,7 @@ export function App() {
           </div>
         )}
 
-        {/* Progress */}
+        {/* Progress Box */}
         {progress && (
           <div class="progress-box">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -438,12 +462,21 @@ export function App() {
           </div>
         )}
 
-        {/* Upload zone */}
+        {/* Area Unggah (Upload Dropzone) */}
         {!uploading && (
-          <label class="upload-zone">
-            <div style={{ fontSize: '2.5rem', marginBottom: 10 }}>📤</div>
-            <h2>Unggah E-Book PDF</h2>
-            <p>Pilih file PDF berisi teks (bukan hasil scan). Semua diproses di browser, tidak ada data yang dikirim ke server.</p>
+          <label class="upload-dropzone">
+            <div class="upload-icon-circle">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="12" y1="18" x2="12" y2="12" />
+                <polyline points="9 15 12 12 15 15" />
+              </svg>
+            </div>
+            <h2 class="upload-title">Unggah E-Book PDF</h2>
+            <p class="upload-subtitle">
+              Pilih file PDF berisi teks (bukan hasil scan). Semua diproses di browser, tidak ada data yang dikirim ke server.
+            </p>
             <input
               type="file"
               accept="application/pdf"
@@ -451,64 +484,126 @@ export function App() {
               onChange={handleUpload}
               disabled={uploading}
             />
-            <span class="btn btn-primary" style={{ display: 'inline-block' }}>Pilih File PDF</span>
+            <span class="btn-upload-primary">
+              <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M10 4v12M4 10h12" />
+              </svg>
+              Pilih File PDF
+            </span>
           </label>
         )}
 
-        {/* Koleksi Buku */}
-        <h2 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: 14, color: 'var(--secondary-text)' }}>
-          Koleksi Anda ({books.length} buku)
-        </h2>
+        {/* Bagian Koleksi (Gallery) */}
+        <section class="collection-section">
+          <h2 class="collection-heading">
+            Koleksi Anda <span class="collection-count">({books.length} {books.length === 1 ? 'buku' : 'buku'})</span>
+          </h2>
 
-        {books.length === 0 ? (
-          <div class="empty-state">
-            <div class="icon">📖</div>
-            <p>Belum ada buku. Unggah PDF pertama Anda di atas!</p>
-          </div>
-        ) : (
-          <div class="book-grid">
-            {books.map(b => {
-              const posRaw = localStorage.getItem(`pos_${b.id}`);
-              let pctRead = 0;
-              let chLabel = '';
-              if (posRaw) {
-                try {
-                  const pos = JSON.parse(posRaw);
-                  pctRead = pos.percent || 0;
-                  chLabel = pos.chapterLabel || '';
-                } catch {}
-              }
-              return (
-                <div class="book-card" key={b.id} onClick={() => setActiveBook(b)}>
-                  <div
-                    class="book-cover"
-                    style={{
-                      backgroundImage: covers[b.id] ? `url(${covers[b.id]})` : 'none',
-                      backgroundColor: covers[b.id] ? undefined : 'var(--accent-color)'
-                    }}
-                  >
-                    {!covers[b.id] && '📖'}
-                  </div>
-                  <div class="book-info">
-                    <h3>{b.title}</h3>
-                    <div class="book-meta">
-                      {b.pageCount} halaman{chLabel ? ` • ${chLabel}` : ''}
+          {books.length === 0 ? (
+            <div class="empty-state">
+              <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+              </svg>
+              <p>Belum ada buku di perpustakaan Anda.<br />Unggah file PDF pertama Anda di atas!</p>
+            </div>
+          ) : (
+            <div class="book-grid">
+              {books.map(b => {
+                const posRaw = localStorage.getItem(`pos_${b.id}`);
+                let pctRead = 0;
+                let chLabel = '';
+                if (posRaw) {
+                  try {
+                    const pos = JSON.parse(posRaw);
+                    pctRead = pos.percent || 0;
+                    chLabel = pos.chapterLabel || '';
+                  } catch {}
+                }
+                if (!chLabel && b.chapters && b.chapters.length > 0) {
+                  const firstChapter = b.chapters.find(c => c.kind === 'part' || (c.label && c.label.startsWith('PART'))) || b.chapters.find(c => c.label) || b.chapters[0];
+                  if (firstChapter) {
+                    chLabel = firstChapter.label
+                      ? `${firstChapter.label}${firstChapter.title ? ' ' + firstChapter.title : ''}`
+                      : firstChapter.title;
+                  }
+                }
+
+                return (
+                  <div class="book-card" key={b.id} onClick={() => setActiveBook(b)}>
+                    {/* Thumbnail dengan margin & padding pas */}
+                    <div class="book-cover-frame">
+                      <div
+                        class="book-cover-inner"
+                        style={{
+                          backgroundImage: covers[b.id] ? `url(${covers[b.id]})` : 'none',
+                        }}
+                      >
+                        {!covers[b.id] && (
+                          <div class="book-fallback-cover">
+                            <svg class="book-fallback-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                            </svg>
+                            <span class="book-fallback-title">{b.title}</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    {posRaw && (
-                      <span class="progress-pill">{pctRead}% dibaca</span>
-                    )}
+
+                    {/* Informasi Buku */}
+                    <div class="book-info-body">
+                      <h3 class="book-card-title" title={b.title}>{b.title}</h3>
+
+                      {/* Label bab 'PART I Individual...' diletakkan rapi, tidak terpotong acak */}
+                      {chLabel && (
+                        <div class="book-chapter-badge" title={chLabel}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                          </svg>
+                          <span>{chLabel}</span>
+                        </div>
+                      )}
+
+                      {/* Progress bar jika sudah mulai dibaca, atau info halaman */}
+                      {posRaw ? (
+                        <div class="book-progress-wrapper">
+                          <div class="book-progress-track">
+                            <div class="book-progress-fill" style={{ width: `${pctRead}%` }} />
+                          </div>
+                          <div class="book-progress-meta">
+                            <span>{pctRead}% dibaca</span>
+                            <span>{b.pageCount} hal</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div class="book-meta-simple">{b.pageCount} halaman</div>
+                      )}
+                    </div>
+
+                    {/* Aksi Buku */}
+                    <div class="book-card-actions">
+                      <button class="btn-read-action" onClick={(e) => { e.stopPropagation(); setActiveBook(b); }}>
+                        {posRaw ? 'Lanjut Baca' : 'Mulai Baca'}
+                      </button>
+                      <button
+                        class="btn-delete-action"
+                        title="Hapus buku"
+                        aria-label="Hapus buku"
+                        onClick={(e) => deleteBook(b.id, e)}
+                      >
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <polyline points="3 6 5 6 21 6" />
+                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
-                  <div class="book-card-actions">
-                    <button class="btn btn-sm btn-primary" style={{ flex: 1 }} onClick={() => setActiveBook(b)}>
-                      {posRaw ? 'Lanjut Baca' : 'Mulai Baca'}
-                    </button>
-                    <button class="btn btn-sm btn-danger" onClick={(e) => deleteBook(b.id, e)}>Hapus</button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+                );
+              })}
+            </div>
+          )}
+        </section>
       </div>
 
       {/* Modal Ekspor Backup */}
