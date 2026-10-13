@@ -2,10 +2,44 @@ import * as pdfjs from 'pdfjs-dist';
 import type { ImgJob } from './parser';
 import { imageBlobKey, coverBlobKey } from '../lib/keys';
 
+class WorkerCanvasFactory {
+  create(width: number, height: number) {
+    const w = Math.max(1, Math.ceil(width));
+    const h = Math.max(1, Math.ceil(height));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const canvas: any = typeof OffscreenCanvas !== 'undefined'
+      ? new OffscreenCanvas(w, h)
+      : document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    return {
+      canvas,
+      context: canvas.getContext('2d'),
+    };
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  reset(canvasAndContext: any, width: number, height: number) {
+    if (canvasAndContext.canvas) {
+      canvasAndContext.canvas.width = Math.max(1, Math.ceil(width));
+      canvasAndContext.canvas.height = Math.max(1, Math.ceil(height));
+    }
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  destroy(canvasAndContext: any) {
+    if (canvasAndContext.canvas) {
+      canvasAndContext.canvas.width = 0;
+      canvasAndContext.canvas.height = 0;
+    }
+    canvasAndContext.canvas = null;
+    canvasAndContext.context = null;
+  }
+}
+
 const PDF_OPTS = {
   useSystemFonts: true,
   disableFontFace: true,
   verbosity: 0,
+  CanvasFactory: WorkerCanvasFactory,
 };
 
 /**

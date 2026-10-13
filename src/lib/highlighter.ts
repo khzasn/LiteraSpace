@@ -34,9 +34,10 @@ export function getSelectionSegments(selection: Selection): HighlightSegment[] |
   }
   
   const blocks = Array.from((commonAncestor as HTMLElement).querySelectorAll('.book-block')) as HTMLElement[];
-  // Jika blok itu sendiri adalah yang dipilih
-  if ((commonAncestor as HTMLElement).classList?.contains('book-block')) {
-    blocks.unshift(commonAncestor as HTMLElement);
+  // Jika seleksi berada di dalam satu blok tunggal (commonAncestor adalah blok itu sendiri atau anak-nya)
+  const parentBlock = (commonAncestor as HTMLElement).closest?.('.book-block') as HTMLElement | null;
+  if (parentBlock && !blocks.includes(parentBlock)) {
+    blocks.unshift(parentBlock);
   }
 
   if (blocks.length === 0) return null;

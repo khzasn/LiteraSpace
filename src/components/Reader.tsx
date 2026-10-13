@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Book, Block, Highlight, HighlightSegment, Chapter } from '../types/book';
 import { getBlob, getHighlightsByBook, saveHighlight, deleteHighlight } from '../lib/db';
-import { imageBlobKey } from '../lib/keys';
+import { imageBlobKey, pdfBlobKey } from '../lib/keys';
 import { createBlockEl, showImagePlaceholder } from '../lib/blocks';
 import { settings } from '../lib/settings';
 import { getSelectionSegments, renderHighlights } from '../lib/highlighter';
@@ -121,6 +121,7 @@ export function Reader({ book, onBack }: { book: Book; onBack: () => void }) {
       container.removeEventListener('click', onContainerClick);
       document.removeEventListener('selectionchange', onSelectionChange);
       clearTimeout(scrollTid);
+      saveReadPosition(container, book);
     };
   }, [book]);
 
@@ -208,7 +209,7 @@ export function Reader({ book, onBack }: { book: Book; onBack: () => void }) {
     <div class="reader-page" onClick={handlePageClick}>
       {/* Toolbar atas */}
       <div class={`reader-toolbar${showToolbar ? '' : ' hidden'}`} onClick={e => e.stopPropagation()}>
-        <button class="btn btn-sm" onClick={onBack}>← Kembali</button>
+        <button class="btn btn-sm" onClick={() => { if (contentRef.current) saveReadPosition(contentRef.current, book); onBack(); }}>← Kembali</button>
         <span class="toolbar-title" title={currentChapterLabel ? `${currentChapterLabel} — ${book.title}` : book.title}>
           {currentChapterLabel || book.title}
         </span>
@@ -634,7 +635,7 @@ function PdfModal({ bookId, pageNum, onClose }: { bookId: string; pageNum: numbe
     let task: any;
     (async () => {
       try {
-        const blob = await getBlob(`pdf_${bookId}`);
+        const blob = await getBlob(pdfBlobKey(bookId));
         if (!blob) return;
         const buf = await blob.arrayBuffer();
         const pdf = await pdfjs.getDocument({ data: new Uint8Array(buf), useSystemFonts: true }).promise;
@@ -645,7 +646,7 @@ function PdfModal({ bookId, pageNum, onClose }: { bookId: string; pageNum: numbe
         canvas.width = vp.width;
         canvas.height = vp.height;
         const ctx = canvas.getContext('2d')!;
-        task = page.render({ canvasContext: ctx, viewport: vp } as any);
+        task = page.render({ canvas, canvasContext: ctx, viewport: vp } as any);
         await task.promise;
       } catch (e) { console.error('PDF render error:', e); }
     })();

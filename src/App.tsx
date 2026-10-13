@@ -7,6 +7,13 @@ import type { ParserMessage } from './worker/parser';
 import { parsePdf } from './worker/parser';
 import { PARSER_VERSION } from './worker/parser-constants';
 import { coverBlobKey, pdfBlobKey } from './lib/keys';
+import { createZipBackup, parseBackupFile } from './lib/backup';
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
 
 function reparseBookInWorker(
   buffer: ArrayBuffer,
@@ -42,6 +49,10 @@ export function App() {
   const [progress, setProgress] = useState<{ page: number; total: number; msg: string } | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadWarning, setUploadWarning] = useState<string | null>(null);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [includePdfInExport, setIncludePdfInExport] = useState(true);
+  const [exportSizes, setExportSizes] = useState({ baseSize: 0, pdfSize: 0 });
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => { loadLibrary(); }, []);
 
@@ -225,26 +236,79 @@ export function App() {
     await loadLibrary();
   }
 
-  async function exportBackup() {
+  async function openExportModal() {
     const db = await getDB();
     const highlights = await db.getAll('highlights');
-    const backup = {
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      books,
-      highlights,
-      settings: localStorage.getItem('pembaca-nyaman-settings'),
-      positions: Object.keys(localStorage)
+    const jsonEstimate = JSON.stringify({ books, highlights }).length;
+
+    const tx = db.transaction('blobs', 'readonly');
+    const keys = await tx.store.getAllKeys();
+    let baseBlobsSize = 0;
+    let pdfBlobsSize = 0;
+
+    for (const k of keys) {
+      if (typeof k === 'string') {
+        const blob = await tx.store.get(k);
+        if (blob) {
+          if (k.startsWith('pdf_')) {
+            pdfBlobsSize += blob.size;
+          } else {
+            baseBlobsSize += blob.size;
+          }
+        }
+      }
+    }
+    await tx.done;
+
+    setExportSizes({
+      baseSize: jsonEstimate + baseBlobsSize,
+      pdfSize: pdfBlobsSize,
+    });
+    setIncludePdfInExport(true);
+    setShowExportModal(true);
+  }
+
+  async function confirmExportBackup() {
+    setExporting(true);
+    try {
+      const db = await getDB();
+      const highlights = await db.getAll('highlights');
+      const tx = db.transaction('blobs', 'readonly');
+      const keys = await tx.store.getAllKeys();
+      const blobs: Record<string, Blob> = {};
+      for (const k of keys) {
+        if (typeof k === 'string') {
+          const b = await tx.store.get(k);
+          if (b) blobs[k] = b;
+        }
+      }
+      await tx.done;
+
+      const positions = Object.keys(localStorage)
         .filter(k => k.startsWith('pos_'))
-        .map(k => ({ k, v: localStorage.getItem(k) }))
-    };
-    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `pembaca-nyaman-backup-${Date.now()}.json`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
+        .map(k => ({ k, v: localStorage.getItem(k) }));
+
+      const zipBlob = await createZipBackup({
+        books,
+        highlights,
+        settings: localStorage.getItem('pembaca-nyaman-settings'),
+        positions,
+        blobs,
+        includePdf: includePdfInExport,
+      });
+
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `pembaca-nyaman-backup-${Date.now()}.zip`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      setShowExportModal(false);
+    } catch (err) {
+      setUploadError(`Gagal membuat backup: ${err}`);
+    } finally {
+      setExporting(false);
+    }
   }
 
   async function importBackup(e: Event) {
@@ -252,14 +316,28 @@ export function App() {
     (e.target as HTMLInputElement).value = '';
     if (!file) return;
 
+    setUploadError(null);
+    setUploadWarning(null);
+    setProgress({ page: 1, total: 1, msg: 'Mengimpor backup...' });
+
     try {
-      const text = await file.text();
-      const backup = JSON.parse(text);
+      const parsed = await parseBackupFile(file);
+      const { backup, blobs, warning } = parsed;
+
       if (backup.settings) localStorage.setItem('pembaca-nyaman-settings', backup.settings);
       if (Array.isArray(backup.positions)) {
-        backup.positions.forEach((p: any) => localStorage.setItem(p.k, p.v));
+        backup.positions.forEach((p: any) => {
+          if (p && p.k && p.v !== null && p.v !== undefined) {
+            localStorage.setItem(p.k, p.v);
+          }
+        });
       }
-      setProgress({ page: 1, total: 1, msg: 'Mengimpor backup...' });
+
+      // Simpan semua blob terlebih dahulu (gambar, sampul, pdf)
+      for (const [key, blob] of Object.entries(blobs)) {
+        await saveBlob(key, blob);
+      }
+
       if (Array.isArray(backup.books)) {
         for (const b of backup.books) await saveBook(b);
       }
@@ -268,6 +346,10 @@ export function App() {
         const tx = db.transaction('highlights', 'readwrite');
         for (const h of backup.highlights) await tx.store.put(h);
         await tx.done;
+      }
+
+      if (warning) {
+        setUploadWarning(warning);
       }
       setProgress(null);
       await loadLibrary();
@@ -302,9 +384,9 @@ export function App() {
         <div style={{ display: 'flex', gap: 8 }}>
           <label class="btn btn-sm" style={{ cursor: 'pointer' }}>
             Impor
-            <input type="file" accept="application/json" style={{ display: 'none' }} onChange={importBackup} />
+            <input type="file" accept=".zip,.json,application/zip,application/json" style={{ display: 'none' }} onChange={importBackup} />
           </label>
-          <button class="btn btn-sm" onClick={exportBackup}>Ekspor</button>
+          <button class="btn btn-sm" onClick={openExportModal}>Ekspor</button>
         </div>
       </header>
 
@@ -410,6 +492,79 @@ export function App() {
           </div>
         )}
       </div>
+
+      {/* Modal Ekspor Backup */}
+      {showExportModal && (
+        <div
+          class="pdf-modal"
+          style={{ background: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 }}
+          onClick={() => !exporting && setShowExportModal(false)}
+        >
+          <div
+            style={{
+              background: 'var(--bg-color)',
+              color: 'var(--text-color)',
+              border: '1px solid var(--border-color)',
+              borderRadius: 14,
+              padding: 20,
+              maxWidth: 380,
+              width: '100%',
+              boxShadow: '0 8px 30px rgba(0,0,0,0.25)',
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 style={{ fontSize: '1.1rem', marginBottom: 8 }}>📦 Ekspor Backup (.zip)</h3>
+            <p style={{ fontSize: '0.88rem', color: 'var(--secondary-text)', marginBottom: 14, lineHeight: 1.5 }}>
+              Backup menyimpan buku, gambar bab, sampul, highlight, pengaturan, dan posisi baca terakhir.
+            </p>
+
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: '10px 12px',
+                background: 'var(--accent-color)',
+                borderRadius: 8,
+                cursor: 'pointer',
+                marginBottom: 12,
+                fontSize: '0.9rem',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={includePdfInExport}
+                onChange={e => setIncludePdfInExport((e.target as HTMLInputElement).checked)}
+              />
+              <span>Sertakan salinan PDF</span>
+            </label>
+
+            <div style={{ fontSize: '0.85rem', color: 'var(--secondary-text)', marginBottom: 18 }}>
+              Ukuran perkiraan:{' '}
+              <strong style={{ color: 'var(--text-color)' }}>
+                ~{formatBytes(exportSizes.baseSize + (includePdfInExport ? exportSizes.pdfSize : 0))}
+              </strong>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button
+                class="btn btn-sm"
+                disabled={exporting}
+                onClick={() => setShowExportModal(false)}
+              >
+                Batal
+              </button>
+              <button
+                class="btn btn-sm btn-primary"
+                disabled={exporting}
+                onClick={confirmExportBackup}
+              >
+                {exporting ? 'Menyiapkan...' : 'Unduh Backup (.zip)'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
