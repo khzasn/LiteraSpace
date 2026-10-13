@@ -412,13 +412,20 @@ function SettingsPanel({ onClose }: { onClose: () => void }) {
 
       <div class="settings-section">
         <span class="settings-label">Tema</span>
-        <div class="settings-row">
-          {['light', 'sepia', 'warm', 'dark'].map(t => (
-            <button key={t} class={`theme-btn${s.theme === t ? ' active' : ''}`}
-              onClick={() => settings.value = { ...s, theme: t as any }}>
-              {t === 'light' ? 'Terang' : t === 'sepia' ? 'Sepia' : t === 'warm' ? 'Hangat' : 'Gelap'}
-            </button>
-          ))}
+        <div class="settings-row" role="group" aria-label="Pilih tema">
+          {(['light', 'sepia', 'warm', 'dark'] as const).map(t => {
+            const labels = { light: 'Terang', sepia: 'Sepia', warm: 'Hangat', dark: 'Gelap' };
+            return (
+              <button
+                key={t}
+                class="theme-btn"
+                data-theme-val={t}
+                aria-label={labels[t]}
+                aria-pressed={s.theme === t}
+                onClick={() => settings.value = { ...s, theme: t as any }}
+              />
+            );
+          })}
         </div>
       </div>
 

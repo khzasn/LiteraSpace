@@ -8,6 +8,8 @@ import { parsePdf } from './worker/parser';
 import { PARSER_VERSION } from './worker/parser-constants';
 import { coverBlobKey, pdfBlobKey } from './lib/keys';
 import { createZipBackup, parseBackupFile } from './lib/backup';
+import { settings } from './lib/settings';
+import type { Theme } from './lib/settings';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -381,7 +383,22 @@ export function App() {
       {/* Header */}
       <header class="library-header">
         <h1>📚 Pembaca Nyaman</h1>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div class="theme-picker" role="group" aria-label="Pilih tema">
+            {(['light', 'sepia', 'warm', 'dark'] as Theme[]).map(t => {
+              const labels: Record<Theme, string> = { light: 'Terang', sepia: 'Sepia', warm: 'Hangat', dark: 'Gelap' };
+              return (
+                <button
+                  key={t}
+                  class="theme-swatch"
+                  data-theme-val={t}
+                  aria-label={labels[t]}
+                  aria-pressed={settings.value.theme === t}
+                  onClick={() => settings.value = { ...settings.value, theme: t }}
+                />
+              );
+            })}
+          </div>
           <label class="btn btn-sm" style={{ cursor: 'pointer' }}>
             Impor
             <input type="file" accept=".zip,.json,application/zip,application/json" style={{ display: 'none' }} onChange={importBackup} />
@@ -389,6 +406,7 @@ export function App() {
           <button class="btn btn-sm" onClick={openExportModal}>Ekspor</button>
         </div>
       </header>
+
 
       <div class="library-body">
         {/* Error banner */}

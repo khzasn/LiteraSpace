@@ -16,8 +16,12 @@ export interface ReaderSettings {
   dropCap: boolean;
 }
 
+const _prefersColorSchemeDark =
+  typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches;
+const _defaultTheme: Theme = _prefersColorSchemeDark ? 'dark' : 'sepia';
+
 export const defaultSettings: ReaderSettings = {
-  theme: 'light',
+  theme: _defaultTheme,
   fontFamily: 'Literata',
   fontSize: 18,
   lineHeight: 1.6,
@@ -62,8 +66,8 @@ effect(() => {
     const colors: Record<Theme, string> = {
       light: '#ffffff',
       sepia: '#f4ecd8',
-      warm: '#e5e1d8',
-      dark: '#1a1a1a'
+      warm: '#f0ece4',
+      dark: '#1c1c1e'
     };
     metaTheme.setAttribute('content', colors[s.theme as Theme] || '#ffffff');
     }
