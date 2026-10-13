@@ -1,6 +1,6 @@
-# 📚 Ebookly
+# 📚 LiteraSpace
 
-**Ebookly** adalah aplikasi web progresif (*Progressive Web App* / PWA) pembaca e-book PDF yang mengubah dokumen PDF berisi teks menjadi tampilan baca yang nyaman layaknya buku fisik—lengkap dengan pilihan tema warna (*Light, Sepia, Warm, Dark*), penyesuaian tipografi, daftar isi otomatis, penanda (*highlight*) multi-warna beserta catatan, ekstraksi ilustrasi, dan penyimpanan 100% lokal di perangkat Anda.
+**LiteraSpace** adalah aplikasi web progresif (*Progressive Web App* / PWA) pembaca e-book PDF yang mengubah dokumen PDF berisi teks menjadi tampilan baca yang nyaman layaknya buku fisik—lengkap dengan pilihan tema warna (*Light, Sepia, Warm, Dark*), penyesuaian tipografi, daftar isi otomatis, penanda (*highlight*) multi-warna beserta catatan, ekstraksi ilustrasi, dan penyimpanan 100% lokal di perangkat Anda.
 
 ---
 
@@ -10,10 +10,10 @@ Aplikasi ini dirancang sebagai **PWA** sehingga dapat dipasang ke layar utama (*
 
 ### Android (Google Chrome / Microsoft Edge)
 1. Buka alamat aplikasi di **Google Chrome** pada HP Android Anda:  
-   `https://khzasn.github.io/ebookly/`
+   `https://khzasn.github.io/LiteraSpace/`
 2. Pada halaman Perpustakaan, ketuk tombol **"Tambahkan ke layar utama"** pada kotak petunjuk di bagian atas, **ATAU**:
 3. Ketuk ikon menu **⋮ (tiga titik)** di pojok kanan atas Chrome → pilih **"Tambahkan ke layar utama"** (*Add to Home screen*) atau **"Instal aplikasi"** (*Install app*).
-4. Konfirmasi dengan mengetuk **Instal / Tambah**. Ikon **Ebookly** akan muncul di daftar aplikasi HP Anda.
+4. Konfirmasi dengan mengetuk **Instal / Tambah**. Ikon **LiteraSpace** akan muncul di daftar aplikasi HP Anda.
 
 ### iOS / iPadOS (Safari)
 1. Buka alamat aplikasi menggunakan browser **Safari** di iPhone atau iPad Anda.
@@ -25,17 +25,17 @@ Aplikasi ini dirancang sebagai **PWA** sehingga dapat dipasang ke layar utama (*
 
 ## 🔄 2. Cara Memindahkan Buku Antar Perangkat Lewat Cadangan (Backup & Restore)
 
-Karena Ebookly tidak menggunakan server eksternal maupun akun *cloud* demi privasi penuh, seluruh buku diproses dan disimpan langsung di perangkat Anda. Untuk memindahkan koleksi buku, gambar bab, penanda (*highlight*), catatan, pengaturan baca, serta posisi halaman terakhir dari satu perangkat ke perangkat lain (misalnya dari Laptop ke HP, atau saat ganti HP baru):
+Karena LiteraSpace tidak menggunakan server eksternal maupun akun *cloud* demi privasi penuh, seluruh buku diproses dan disimpan langsung di perangkat Anda. Untuk memindahkan koleksi buku, gambar bab, penanda (*highlight*), catatan, pengaturan baca, serta posisi halaman terakhir dari satu perangkat ke perangkat lain (misalnya dari Laptop ke HP, atau saat ganti HP baru):
 
 ### Langkah A — Ekspor Cadangan di Perangkat Asal
-1. Buka halaman **Perpustakaan** Ebookly di perangkat asal.
+1. Buka halaman **Perpustakaan** LiteraSpace di perangkat asal.
 2. Klik tombol **Ekspor** di bagian kanan atas header.
 3. Pastikan opsi **"Sertakan salinan PDF"** dicentang (default aktif) agar file PDF asli ikut terbawa di dalam cadangan.
 4. Klik **"Unduh Backup (.zip)"**.
 5. Kirim file `.zip` tersebut ke perangkat tujuan Anda (melalui WhatsApp, Telegram, Google Drive, AirDrop, kabel data, atau email).
 
 ### Langkah B — Impor Cadangan di Perangkat Tujuan
-1. Buka **Ebookly** di perangkat tujuan (HP/Tablet/Laptop).
+1. Buka **LiteraSpace** di perangkat tujuan (HP/Tablet/Laptop).
 2. Klik tombol **Impor** di bagian kanan atas header.
 3. Pilih file `.zip` hasil ekspor tadi (aplikasi juga tetap mendukung file cadangan format lama `.json`).
 4. Seluruh buku, sampul, gambar ilustrasi, *highlight*, pengaturan tema/font, dan persentase progres baca akan langsung dipulihkan seperti semula.

@@ -67,7 +67,7 @@ export function App() {
   const [isStandalone, setIsStandalone] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [dismissInstallHint, setDismissInstallHint] = useState(() => {
-    try { return sessionStorage.getItem('ebookly-dismiss-install') === '1'; } catch { return false; }
+    try { return sessionStorage.getItem('literaspace-dismiss-install') === '1'; } catch { return false; }
   });
 
   useEffect(() => {
@@ -379,7 +379,7 @@ export function App() {
       const url = URL.createObjectURL(zipBlob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `ebookly-backup-${Date.now()}.zip`;
+      a.download = `literaspace-backup-${Date.now()}.zip`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 10000);
       setShowExportModal(false);
@@ -469,7 +469,7 @@ export function App() {
               <rect x="14.5" y="6" width="11" height="2" rx="1" fill="#ffffff" fill-opacity="0.8" />
               <rect x="14.5" y="10" width="7" height="2" rx="1" fill="#ffffff" fill-opacity="0.8" />
             </svg>
-            <h1 class="brand-title">Ebookly</h1>
+            <h1 class="brand-title">LiteraSpace</h1>
           </div>
 
           <div class="header-controls">
@@ -525,7 +525,7 @@ export function App() {
               </div>
               <p class="install-hint-desc">
                 {deferredPrompt
-                  ? 'Pasang Ebookly di layar utama HP/perangkat Anda agar dapat dibuka layar penuh dan tetap berfungsi tanpa koneksi internet.'
+                  ? 'Pasang LiteraSpace di layar utama HP/perangkat Anda agar dapat dibuka layar penuh dan tetap berfungsi tanpa koneksi internet.'
                   : 'Android (Chrome): ketuk menu ⋮ → "Tambahkan ke layar utama". iOS (Safari): ketuk tombol Bagikan → "Tambah ke Layar Utama".'}
               </p>
             </div>
@@ -540,7 +540,7 @@ export function App() {
                 aria-label="Tutup petunjuk pasang"
                 onClick={() => {
                   setDismissInstallHint(true);
-                  try { sessionStorage.setItem('ebookly-dismiss-install', '1'); } catch {}
+                  try { sessionStorage.setItem('literaspace-dismiss-install', '1'); } catch {}
                 }}
               >
                 ✕

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 
 export default defineConfig({
   // Sesuaikan base dengan nama repo GitHub Pages
-  base: '/ebookly/',
+  base: '/LiteraSpace/',
 
   plugins: [
     preact(),
@@ -14,14 +14,14 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg', 'favicon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png'],
       manifest: {
-        name: 'Ebookly',
-        short_name: 'Ebookly',
+        name: 'LiteraSpace',
+        short_name: 'LiteraSpace',
         description: 'Baca ebook PDF dengan tampilan nyaman seperti buku fisik, langsung di browser dan bekerja offline.',
         theme_color: '#f4ecd8',
         background_color: '#f4ecd8',
         display: 'standalone',
-        start_url: '/ebookly/',
-        scope: '/ebookly/',
+        start_url: '/LiteraSpace/',
+        scope: '/LiteraSpace/',
         lang: 'id',
         icons: [
           {

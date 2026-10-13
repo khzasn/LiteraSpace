@@ -9,7 +9,7 @@ const screenshotBab1Path = path.resolve(__dirname, 'bab1-images.png');
 test.describe('E2E: Gambar di Reader dan Backup/Restore .zip & .json (Viewport 390x844)', () => {
   test('Unggah gutenberg.pdf -> 4 gambar + sampul + pdf -> Reader naturalWidth > 0 -> Backup .zip -> Clear DB -> Impor .zip -> Impor .json lama', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/ebookly/');
+    await page.goto('/LiteraSpace/');
 
     // Bersihkan IndexedDB dan localStorage terlebih dahulu
     await page.evaluate(async () => {
