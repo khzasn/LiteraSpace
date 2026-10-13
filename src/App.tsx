@@ -391,7 +391,7 @@ export function App() {
               <rect x="14.5" y="6" width="11" height="2" rx="1" fill="#ffffff" fill-opacity="0.8" />
               <rect x="14.5" y="10" width="7" height="2" rx="1" fill="#ffffff" fill-opacity="0.8" />
             </svg>
-            <h1 class="brand-title">Pembaca Nyaman</h1>
+            <h1 class="brand-title">Ebookly</h1>
           </div>
 
           <div class="header-controls">
