@@ -7,6 +7,20 @@ import { join } from 'path';
 import { pathToFileURL } from 'url';
 import { JSDOM } from 'jsdom';
 
+// Polyfill Promise.withResolvers untuk lingkungan Node < 22
+if (typeof Promise.withResolvers === 'undefined') {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (Promise as any).withResolvers = function <T>() {
+    let resolve!: (value: T | PromiseLike<T>) => void;
+    let reject!: (reason?: any) => void;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  };
+}
+
 // Setup DOM global untuk pengujian komponen & DOM
 if (typeof window === 'undefined') {
   const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>', {
